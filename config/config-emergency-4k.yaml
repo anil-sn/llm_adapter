@@ -1,0 +1,59 @@
+# Emergency 4K context configuration for maximum stability
+# Copy this over config.yaml if 8K still causes OOM
+
+cluster:
+  gateway_port: 8888
+  routing_strategy: "prefix_hash"
+  spillover:
+    enabled: true
+    queue_threshold: 4
+
+replicas:
+  count: 1
+  base_port: 8000
+  gpu_groups: ["0,1,2,3"]
+  core_ranges:
+    - "0-55,56-111"
+
+model:
+  id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8"
+  served_model_name: "nemotron-3-super"
+
+hardware:
+  tensor_parallel_size: 4
+  gpu_memory_utilization: 0.60  # Even more conservative
+  enforce_eager: true
+  env_vars:
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    TOKENIZERS_PARALLELISM: "true"
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"
+    NCCL_CROSS_NIC: "0"
+    PYTORCH_ALLOC_CONF: "expandable_segments:True,max_split_size_mb:512"
+    VLLM_LOGGING_LEVEL: "WARNING"
+    CUDA_LAUNCH_BLOCKING: "0"
+    PYTORCH_CUDA_ALLOC_CONF: "backend:native"
+
+model_rules:
+  - pattern: "claude"
+    adapter: "claude"
+  - pattern: "nemotron|nvidia"
+    adapter: "nemotron"
+  - pattern: "qwen|distilled|opus"
+    adapter: "nemotron"
+  - pattern: ".*"
+    adapter: "openai"
+
+inference:
+  kv_cache_dtype: "fp8"
+  max_model_len: 4096           # Halved for maximum stability
+  max_num_seqs: 2               # Only 2 concurrent requests
+  enable_prefix_caching: true
+  enable_chunked_prefill: false
+  enable_thinking: false
+  enable_auto_tool_choice: false
+  tool_call_parser: ""
+
+observability:
+  log_level: "INFO"
+  metrics: true
+  metrics_port: 9090

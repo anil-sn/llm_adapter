@@ -1,0 +1,26 @@
+[project]
+name = "nemo-orchestrator"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.135.3",
+    "hf-transfer>=0.1.9",
+    "httpx>=0.28.1",
+    "huggingface-hub>=0.36.2",
+    "nvidia-cublas-cu12>=12.8.4.1",
+    "nvidia-cuda-cupti-cu12>=12.8.90",
+    "nvidia-cuda-nvcc-cu12>=12.9.86",
+    "nvidia-cuda-runtime-cu12>=12.8.90",
+    "nvidia-cudnn-cu12>=9.10.2.21",
+    "nvidia-cufft-cu12>=11.3.3.83",
+    "nvidia-curand-cu12>=10.3.9.90",
+    "nvidia-cusolver-cu12>=11.7.3.90",
+    "nvidia-cusparse-cu12>=12.5.8.93",
+    "nvidia-nccl-cu12>=2.27.5",
+    "nvidia-nvtx-cu12>=12.8.90",
+    "pyyaml>=6.0.3",
+    "uvicorn>=0.44.0",
+    "vllm>=0.19.0",
+]
