@@ -1,0 +1,69 @@
+# Nemo-Orchestrator: Coherent Cluster v3.1 (Performance Optimized)
+# Optimized for RTX 6000 Ada (SM90) × 4 GPUs, 192GB VRAM total
+# Model: NVIDIA-Nemotron-3-Super-120B-A12B-FP8
+
+cluster:
+  gateway_port: 8888
+  routing_strategy: "prefix_hash"
+  spillover:
+    enabled: true
+    queue_threshold: 4
+
+replicas:
+  count: 1
+  base_port: 8000
+  gpu_groups: ["0,1,2,3"]
+  core_ranges:
+    - "0-55,56-111"
+
+model:
+  id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8"
+  served_model_name: "nemotron-3-super"  # Clean name for Claude Code compatibility
+  tokenizer_mode: "auto"  # auto, slow, mistral - use auto to apply regex fix
+
+hardware:
+  tensor_parallel_size: 4
+  gpu_memory_utilization: 0.85  # Reduced from 0.90 to prevent OOM - leaves ~7GB headroom
+  attention_backend: "TRITON_ATTN"  # Required for FP8 (per official cookbook)
+  disable_custom_all_reduce: true   # Required for PCIe topology (non-NVLink)
+  env_vars:
+    HF_HUB_OFFLINE: "1"  # Force offline mode - use cached model only
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    TOKENIZERS_PARALLELISM: "true"
+    # VLLM_ATTENTION_BACKEND removed - use --attention-backend CLI flag instead
+    NCCL_CROSS_NIC: "0"
+    PYTORCH_ALLOC_CONF: "expandable_segments:True,max_split_size_mb:512"  # Aggressive fragmentation prevention
+    VLLM_LOGGING_LEVEL: "CRITICAL"  # Suppress all except critical errors
+    VLLM_CONFIGURE_LOGGING: "0"  # Disable vLLM's logging configuration
+    CUDA_LAUNCH_BLOCKING: "0"  # Async kernel launches to reduce memory peaks
+    PYTORCH_CUDA_ALLOC_CONF: "backend:native"  # Use native allocator for MoE workloads
+    OMP_NUM_THREADS: "1"  # Silence torch parallelism warning
+    VLLM_WORKER_MULTIPROC_METHOD: "spawn"  # Cleaner worker startup
+
+# Model Capability Mapping (Dynamic Factory)
+model_rules:
+  - pattern: "claude"
+    adapter: "claude"
+  - pattern: "nemotron|nvidia"
+    adapter: "nemotron"
+  - pattern: "qwen|distilled|opus"
+    adapter: "nemotron"
+  - pattern: ".*"
+    adapter: "openai"
+
+inference:
+  kv_cache_dtype: "fp8"
+  max_model_len: 32768          # 32K context - safe memory usage
+  max_num_seqs: 6               # Reduced from 8 to prevent OOM (each seq reserves KV cache)
+  enable_prefix_caching: true
+  enable_chunked_prefill: false # DISABLED: Reduces memory spikes (was causing 98.6% usage)
+  enable_thinking: false         # DISABLED: Reasoning adds memory overhead
+  reasoning_parser: "super_v3"  # Official cookbook uses super_v3 not nemotron_v3
+  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"  # Required custom plugin
+  enable_auto_tool_choice: true # Enable tool calling for Claude Code CLI
+  tool_call_parser: "qwen3_coder"  # Official cookbook parser for XML format
+
+observability:
+  log_level: "INFO"
+  metrics: true
+  metrics_port: 9090
