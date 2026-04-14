@@ -53,8 +53,8 @@ model_rules:
 
 inference:
   kv_cache_dtype: "fp8"
-  max_model_len: 32768          # 32K context - safe memory usage
-  max_num_seqs: 6               # Reduced from 8 to prevent OOM (each seq reserves KV cache)
+  max_model_len: 49152          # 48K context - utilizing available headroom (11.6% free GPU mem)
+  max_num_seqs: 4               # Reduced to 4 to accommodate larger KV cache per sequence
   enable_prefix_caching: true
   enable_chunked_prefill: false # DISABLED: Reduces memory spikes (was causing 98.6% usage)
   enable_thinking: false         # DISABLED: Reasoning adds memory overhead
