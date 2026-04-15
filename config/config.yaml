@@ -53,11 +53,11 @@ model_rules:
 
 inference:
   kv_cache_dtype: "fp8"
-  max_model_len: 262144         # 256K context - native model default (NVIDIA spec)
-  max_num_seqs: 1               # Reduced to 1 to accommodate 4x larger KV cache
+  max_model_len: 131072         # 128K context - 2x increase, works around vLLM v1 bug
+  max_num_seqs: 2               # Set to 2 to avoid tensor shape (2,2,...) assertion bug in v1
   enable_prefix_caching: true
   enable_chunked_prefill: true  # Re-enabled: Processes long prompts in chunks to reduce memory spikes
-  max_num_batched_tokens: 16384 # Increased for 256K context (2x chunk size for stability)
+  max_num_batched_tokens: 16384 # Increased for larger context (2x chunk size for stability)
   enable_thinking: false         # DISABLED: Reasoning adds memory overhead
   reasoning_parser: "super_v3"  # Official cookbook uses super_v3 not nemotron_v3
   reasoning_parser_plugin: "./super_v3_reasoning_parser.py"  # Required custom plugin
