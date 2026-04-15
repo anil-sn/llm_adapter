@@ -239,8 +239,6 @@ def start():
             "--trust-remote-code",
             "--tokenizer-mode", config["model"].get("tokenizer_mode", "auto"),
             "--dtype", "auto",
-            # --async-scheduling disabled: vLLM v1 has KV cache layout bug with max_num_seqs=1
-            # See: https://github.com/vllm-project/vllm/issues/...
         ]
 
         # Hardware optimizations (matching official cookbook)
