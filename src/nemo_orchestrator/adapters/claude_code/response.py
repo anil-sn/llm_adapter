@@ -2,6 +2,10 @@
 
 Convert OpenAI Chat Completions responses to Anthropic Messages format
 将 OpenAI Chat Completions 响应转换为 Anthropic Messages 格式
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 import json

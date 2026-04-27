@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Nemo-Gateway v6.0: Simple Direct Router
-- Single model: nemotron-3-super
-- No complex aliasing
-- Direct passthrough with protocol translation
+
+Simple direct router for Nemotron models with minimal complexity.
+
+Author: Anil Srirangapatna Nagesh
+Version: 6.0
+Created: 2026-04-27
 """
 
 import hashlib

@@ -2,6 +2,9 @@
 Model Alias Mapper - Multi-Client Compatibility
 Maps incoming model names from various clients (OpenAI, Claude, Claude Code CLI, etc.)
 to the actual served model names in vLLM.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
 """
 
 import logging

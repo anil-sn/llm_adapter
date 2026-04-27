@@ -2,6 +2,10 @@
 
 Pydantic models for OpenAI Chat Completions API
 OpenAI Chat Completions API 的 Pydantic 模型
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 from typing import Any, Literal, Optional, Union

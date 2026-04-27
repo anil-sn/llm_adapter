@@ -2,6 +2,10 @@
 
 Functions for converting tool definitions between Anthropic and OpenAI formats
 在 Anthropic 和 OpenAI 格式之间转换工具定义的函数
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 import secrets

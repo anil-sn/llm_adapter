@@ -1,6 +1,11 @@
 """
 Claude Adapter V2 - Using production-ready claude-adapter-py converters
-Integrates battle-tested streaming and response conversion logic
+
+Integrates battle-tested streaming and response conversion logic.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+Created: 2026-04-27
 """
 
 import json

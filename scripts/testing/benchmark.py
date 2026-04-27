@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 """
 Nemo-Orchestrator: Professional Benchmark Utility
+
 Validates:
 1. Aggregate Tokens Per Second (Throughput)
 2. Time-to-First-Token (Latency)
 3. Cache-Hit Efficiency (Repeat Prompting)
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 import asyncio

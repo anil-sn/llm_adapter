@@ -1,3 +1,13 @@
+"""
+ClaudeAdapter for LLM Orchestrator
+
+Protocol Enforcer Claude Adapter:
+Guarantees Anthropic Messages API compliance via a state-driven emitter.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
+
 import json
 import logging
 import uuid
@@ -27,8 +37,7 @@ class ClaudeAdapter(OpenAIAdapter):
         return trimmed in prefill_tokens or len(trimmed) <= 2
 
     def build_request(self, body: dict) -> dict:
-        # 1. Budgeting: Clamping with the Enforcer heuristic
-        body = self.clamp_max_tokens(body, self.max_context)
+        # 1. Budgeting: Unified clamping happens at end with tool overhead
         self.thinking_requested = body.get("enable_thinking", False) or body.get("include_thinking", False)
 
         # Estimate input tokens for message_start (improved heuristic)
@@ -39,9 +48,8 @@ class ClaudeAdapter(OpenAIAdapter):
         system_text = str(body.get("system", ""))
         total_text = messages_text + system_text
 
-        # Rough estimate: ~4 chars per token for English text
-        # Add 10% for JSON overhead
-        self.estimated_input_tokens = int((len(total_text) / 4.0) * 1.1)
+        # Realistic: ~2 chars per token (safety margin in clamp_max_tokens)
+        self.estimated_input_tokens = int(len(total_text) / 2.0)
 
         # 2. Protocol Identification
         if body.get("__protocol__") == "anthropic" or "system" in body:
@@ -106,12 +114,28 @@ class ClaudeAdapter(OpenAIAdapter):
             if role != "tool":
                 openai_messages.append(m)
 
+        # Validate: Final messages must have at least one user/assistant message (not just system)
+        # This catches edge cases where all messages were filtered out during processing
+        has_user_or_assistant = any(
+            msg.get("role") in ["user", "assistant"]
+            for msg in openai_messages
+        )
+        if not has_user_or_assistant:
+            raise ValueError("messages: must contain at least one user or assistant message")
+
         # 4. Tool Mapping (for Claude Code CLI compatibility)
         tools = body.get("tools")
         openai_tools = []
         if tools:
             for t in tools:
-                if "input_schema" in t:
+                tool_type = t.get("type", "")
+
+                # Already in OpenAI format (type="function")
+                if tool_type == "function":
+                    openai_tools.append(t)
+
+                # Anthropic format with input_schema
+                elif "input_schema" in t:
                     openai_tools.append({
                         "type": "function",
                         "function": {
@@ -120,28 +144,118 @@ class ClaudeAdapter(OpenAIAdapter):
                             "parameters": t.get("input_schema")
                         }
                     })
-                else: openai_tools.append(t)
 
-        # 5. TokenGuard: Clamp max_tokens to respect model's max_model_len
-        requested_max_tokens = body.get("max_tokens", 1024)
+                # Anthropic built-in tools (web_search_20250305, bash_20241022, etc.)
+                elif tool_type.startswith("web_search"):
+                    # Note: max_uses, allowed_domains, blocked_domains are Anthropic-specific
+                    # and not supported by vLLM - they will be ignored
+                    logger.debug(f"Converting Anthropic web_search tool (type: {tool_type})")
+                    openai_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": t.get("name", "web_search"),
+                            "description": t.get("description", "Search the web for current information"),
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "query": {
+                                        "type": "string",
+                                        "description": "The search query"
+                                    }
+                                },
+                                "required": ["query"]
+                            }
+                        }
+                    })
 
-        # Adjust estimated tokens for tool definitions overhead (Claude Code CLI sends large tool schemas)
-        tool_overhead = len(openai_tools) * 800 if openai_tools else 0  # ~800 tokens per tool definition
-        adjusted_input_tokens = self.estimated_input_tokens + tool_overhead
+                elif tool_type.startswith("bash"):
+                    logger.debug(f"Converting Anthropic bash tool (type: {tool_type})")
+                    openai_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": t.get("name", "bash"),
+                            "description": t.get("description", "Execute bash commands in a persistent session"),
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "command": {
+                                        "type": "string",
+                                        "description": "The bash command to run"
+                                    },
+                                    "restart": {
+                                        "type": "boolean",
+                                        "description": "Set to true to restart the bash session"
+                                    }
+                                },
+                                "required": ["command"]
+                            }
+                        }
+                    })
 
-        # Calculate available output space (reserve 30% safety margin for tokenization variance)
-        available_output = int((self.max_context - adjusted_input_tokens) * 0.7)
-        available_output = max(512, available_output)  # Ensure minimum 512 tokens
+                elif tool_type.startswith("text_editor"):
+                    logger.debug(f"Converting Anthropic text_editor tool (type: {tool_type})")
+                    openai_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": t.get("name", "text_editor"),
+                            "description": t.get("description", "Edit text files"),
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "command": {
+                                        "type": "string",
+                                        "description": "The editor command (view, create, str_replace, insert, undo_edit)"
+                                    },
+                                    "path": {
+                                        "type": "string",
+                                        "description": "Path to the file"
+                                    }
+                                },
+                                "required": ["command", "path"]
+                            }
+                        }
+                    })
 
-        # Clamp to available space
-        clamped_max_tokens = min(requested_max_tokens, available_output)
+                elif tool_type.startswith("computer"):
+                    logger.debug(f"Converting Anthropic computer tool (type: {tool_type})")
+                    openai_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": t.get("name", "computer"),
+                            "description": t.get("description", "Computer control tool"),
+                            "parameters": {
+                                "type": "object",
+                                "properties": {
+                                    "action": {
+                                        "type": "string",
+                                        "description": "The action to perform"
+                                    }
+                                },
+                                "required": ["action"]
+                            }
+                        }
+                    })
 
-        if clamped_max_tokens < requested_max_tokens:
-            logger.warning(
-                f"TokenGuard: Clamped max_tokens from {requested_max_tokens} to {clamped_max_tokens} "
-                f"(input_est: {self.estimated_input_tokens}, tools_overhead: {tool_overhead}, "
-                f"total_est: {adjusted_input_tokens}, context: {self.max_context})"
-            )
+                else:
+                    # Unknown tool type - log warning and skip to avoid vLLM validation errors
+                    logger.warning(f"Unknown tool type '{tool_type}' for tool '{t.get('name')}' - skipping. "
+                                   f"If this is a custom tool, ensure it uses 'input_schema' format.")
+                    continue
+
+        # 5. TokenGuard: Calculate dynamic tool overhead
+        # Dynamic tool overhead: 100 tokens base + 50 per parameter
+        if openai_tools:
+            tool_overhead = 0
+            for tool in openai_tools:
+                tool_overhead += 100  # Base overhead
+                func = tool.get("function", {})
+                params = func.get("parameters", {}).get("properties", {})
+                tool_overhead += len(params) * 50
+            body["__tool_overhead_tokens__"] = tool_overhead
+
+        # Unified clamping (single pass, 5% safety margin)
+        body = self.clamp_max_tokens(body, self.max_context)
+        clamped_max_tokens = body.get("max_tokens")
 
         return {
             "model": body.get("model"),

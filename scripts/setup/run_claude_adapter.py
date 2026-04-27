@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """
 Run claude-adapter-py with Nemotron backend
-Uses the production-ready claude-adapter-py implementation
+
+Uses the production-ready claude-adapter-py implementation.
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 import sys

@@ -1,3 +1,13 @@
+"""
+Pulse Scheduler for LLM Orchestrator
+
+Temporal coalescing engine for high-throughput request batching.
+Implements smart batching with configurable pulse windows (5ms-30ms).
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
+
 import asyncio
 import time
 import logging

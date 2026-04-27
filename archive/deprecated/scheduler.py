@@ -1,3 +1,13 @@
+"""
+Pulse Scheduler - Legacy Implementation
+
+Legacy pulse scheduler for batch processing requests.
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
+"""
+
 import asyncio
 import time
 import logging

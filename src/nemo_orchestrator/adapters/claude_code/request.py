@@ -1,7 +1,11 @@
-"""Request converter 请求转换器
+"""
+Request converter 请求转换器
 
 Convert Anthropic Messages API requests to OpenAI Chat Completions format
 将 Anthropic Messages API 请求转换为 OpenAI Chat Completions 格式
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
 """
 
 import json

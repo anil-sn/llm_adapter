@@ -1,46 +1,162 @@
+"""
+Adapter Factory for LLM Orchestrator
+
+Dynamically selects and instantiates the appropriate adapter based on
+model name patterns from configuration.
+
+Supported Adapters:
+- ClaudeAdapter: For Claude-style requests
+- QwenAdapter: For Qwen models with thinking mode
+- NemotronAdapter: For NVIDIA Nemotron models
+- OpenAIAdapter: Fallback for standard OpenAI-compatible requests
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
+
 import logging
 import re
-import yaml
 from pathlib import Path
+from typing import Union
+
 from .claude_adapter import ClaudeAdapter
 from .openai_adapter import OpenAIAdapter
 from .nemotron_adapter import NemotronAdapter
+from .qwen_adapter import QwenAdapter
+
+from nemo_orchestrator.utils.config_loader import load_config, ConfigError
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 logger = logging.getLogger("adapter-factory")
 
-# Load rules from config
-# Project root is 4 levels up: factory.py -> adapters/ -> nemo_orchestrator/ -> src/ -> project/
-PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
-
-if not CONFIG_FILE.exists():
-    # Fallback for old structure
-    CONFIG_FILE = PROJECT_ROOT / "config.yaml"
-
-with open(CONFIG_FILE, "r") as f:
-    config = yaml.safe_load(f)
+# Load configuration at module level
+try:
+    config = load_config(project_root=PROJECT_ROOT, validate=False)  # Skip validation for speed
     RULES = config.get("model_rules", [])
     MAX_CONTEXT = config.get("inference", {}).get("max_model_len", 32768)
 
-def get_adapter(model_id: str) -> OpenAIAdapter:
+    # Extract adapter-specific settings
+    QWEN_ADAPTER_CONFIG = config.get("qwen_adapter", {})
+    NEMOTRON_ADAPTER_CONFIG = config.get("nemotron_adapter", {})
+    CLAUDE_ADAPTER_CONFIG = config.get("claude_adapter", {})
+
+    logger.info(f"Adapter factory initialized with {len(RULES)} routing rules")
+    logger.info(f"Max context: {MAX_CONTEXT:,} tokens")
+
+except ConfigError as e:
+    logger.error(f"Failed to load config: {e}")
+    # Fallback to defaults
+    RULES = []
+    MAX_CONTEXT = 32768
+    QWEN_ADAPTER_CONFIG = {}
+    NEMOTRON_ADAPTER_CONFIG = {}
+    CLAUDE_ADAPTER_CONFIG = {}
+    logger.warning("Using default adapter configuration")
+
+
+def get_adapter(
+    model_id: str
+) -> Union[ClaudeAdapter, NemotronAdapter, OpenAIAdapter]:
     """
-    Dynamically returns the appropriate adapter instance based on config rules.
+    Dynamically select and instantiate the appropriate adapter.
+
+    Pattern-based routing uses regex matching against model_id.
+    First matching rule wins.
+
+    Args:
+        model_id: Model identifier from client request
+
+    Returns:
+        Instantiated adapter object
+
+    Examples:
+        >>> adapter = get_adapter("claude-opus-4")
+        >>> assert isinstance(adapter, ClaudeAdapter)
+
+        >>> adapter = get_adapter("qwen-3.5-122b")
+        >>> assert isinstance(adapter, QwenAdapter)  # When implemented
+
+        >>> adapter = get_adapter("nemotron-3-super")
+        >>> assert isinstance(adapter, NemotronAdapter)
     """
-    selected_type = "openai" # Default
-    
+    selected_type = "openai"  # Default fallback
+
+    # Match against routing rules
     for rule in RULES:
         pattern = rule.get("pattern", "")
         if re.search(pattern, model_id, re.IGNORECASE):
             selected_type = rule.get("adapter", "openai")
+            logger.debug(f"Model '{model_id}' matched pattern '{pattern}' → {selected_type}")
             break
 
-    # Instantiate the selected adapter with context awareness
+    # Instantiate the selected adapter with configuration
     if selected_type == "claude":
-        adapter = ClaudeAdapter(max_context=MAX_CONTEXT)
-    elif selected_type == "nemotron":
-        adapter = NemotronAdapter(max_context=MAX_CONTEXT)
-    else:
-        adapter = OpenAIAdapter(max_context=MAX_CONTEXT)
+        adapter = ClaudeAdapter(
+            max_context=MAX_CONTEXT,
+            **CLAUDE_ADAPTER_CONFIG  # Pass adapter-specific settings
+        )
 
-    logger.info(f"Model: {model_id} | Adapter: {adapter.__class__.__name__}")
+    elif selected_type == "qwen":
+        # Extract Qwen-specific settings
+        sampling_profiles = QWEN_ADAPTER_CONFIG.get("sampling_profiles")
+        default_max_tokens = QWEN_ADAPTER_CONFIG.get("default_max_tokens", 32768)
+        max_output_tokens = QWEN_ADAPTER_CONFIG.get("max_output_tokens", 81920)
+
+        adapter = QwenAdapter(
+            max_context=MAX_CONTEXT,
+            sampling_profiles=sampling_profiles,
+            default_max_tokens=default_max_tokens,
+            max_output_tokens=max_output_tokens
+        )
+
+    elif selected_type == "nemotron":
+        adapter = NemotronAdapter(
+            max_context=MAX_CONTEXT,
+            **NEMOTRON_ADAPTER_CONFIG
+        )
+
+    else:  # openai or unknown
+        adapter = OpenAIAdapter(
+            max_context=MAX_CONTEXT
+        )
+
+    logger.info(f"Request routed: '{model_id}' → {adapter.__class__.__name__}")
     return adapter
+
+
+def reload_config() -> None:
+    """
+    Reload configuration from disk.
+
+    Useful for dynamic config updates without restarting the gateway.
+
+    Raises:
+        ConfigError: If config reload fails
+    """
+    global config, RULES, MAX_CONTEXT
+    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG
+
+    logger.info("Reloading adapter factory configuration...")
+
+    try:
+        config = load_config(project_root=PROJECT_ROOT, validate=False)
+        RULES = config.get("model_rules", [])
+        MAX_CONTEXT = config.get("inference", {}).get("max_model_len", 32768)
+
+        QWEN_ADAPTER_CONFIG = config.get("qwen_adapter", {})
+        NEMOTRON_ADAPTER_CONFIG = config.get("nemotron_adapter", {})
+        CLAUDE_ADAPTER_CONFIG = config.get("claude_adapter", {})
+
+        logger.info(f"Configuration reloaded: {len(RULES)} rules, {MAX_CONTEXT:,} max context")
+
+    except ConfigError as e:
+        logger.error(f"Failed to reload config: {e}")
+        raise
+
+
+# Expose public API
+__all__ = [
+    "get_adapter",
+    "reload_config",
+]

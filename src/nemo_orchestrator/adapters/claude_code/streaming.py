@@ -2,6 +2,10 @@
 
 Convert OpenAI SSE streams to Anthropic SSE events
 将 OpenAI SSE 流转换为 Anthropic SSE 事件
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 import json

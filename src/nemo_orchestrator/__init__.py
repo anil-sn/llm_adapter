@@ -9,7 +9,7 @@ featuring:
 - TokenGuard for context safety
 - Production-ready Claude Code integration
 
-Author: asrirang
+Author: Anil Srirangapatna Nagesh
 Version: 2.0.0
 """
 

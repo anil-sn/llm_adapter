@@ -19,6 +19,10 @@ Based on claude-adapter-py test patterns:
 - test_validation.py → Validation tests (fully replicated)
 - E2E integration → Streaming + Tool calling tests
 
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+Created: 2026-04-27
+
 Run: python3 test_all.py
      python3 test_all.py --quick (skip slow tests)
 """

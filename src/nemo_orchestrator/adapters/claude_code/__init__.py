@@ -1,4 +1,12 @@
-"""Claude Code adapter - production-ready converters"""
+"""
+Claude Code adapter - production-ready converters
+
+Production-ready converters for Claude Code CLI integration.
+Handles streaming, response conversion, and tool calling.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
 
 from .streaming import convert_stream_to_anthropic, StreamState
 from .response import convert_response_to_anthropic, create_error_response

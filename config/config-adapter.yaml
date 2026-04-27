@@ -1,0 +1,82 @@
+# LLM Orchestrator - Adapter Configuration
+# Routing rules and adapter-specific settings
+
+# ============================================================================
+# ADAPTER ROUTING RULES
+# ============================================================================
+# Pattern-based routing: matches client requests to adapters
+# Evaluation order: top to bottom (first match wins)
+
+model_rules:
+  # Claude-style requests → ClaudeAdapter
+  - pattern: "claude"
+    adapter: "claude"
+
+  # Qwen requests → QwenAdapter
+  - pattern: "qwen"
+    adapter: "qwen"
+
+  # Nemotron/NVIDIA requests → NemotronAdapter
+  - pattern: "nemotron|nvidia"
+    adapter: "nemotron"
+
+  # Fallback → OpenAIAdapter
+  - pattern: ".*"
+    adapter: "openai"
+
+# ============================================================================
+# ADAPTER-SPECIFIC SETTINGS
+# ============================================================================
+
+# Claude Adapter Settings
+claude_adapter: {}  # Empty for now - add Claude-specific settings if needed
+
+# Qwen Adapter Settings
+qwen_adapter:
+  # Sampling profiles for different use cases
+  sampling_profiles:
+    thinking_general:
+      description: "General reasoning with thinking mode enabled"
+      temperature: 1.0
+      top_p: 0.95
+      top_k: 20
+      min_p: 0.0
+      presence_penalty: 1.5
+      repetition_penalty: 1.0
+
+    thinking_coding:
+      description: "Precise coding tasks with thinking mode"
+      temperature: 0.6
+      top_p: 0.95
+      top_k: 20
+      min_p: 0.0
+      presence_penalty: 0.0
+      repetition_penalty: 1.0
+
+    instruct_general:
+      description: "General instruction following without thinking"
+      temperature: 0.7
+      top_p: 0.8
+      top_k: 20
+      min_p: 0.0
+      presence_penalty: 1.5
+      repetition_penalty: 1.0
+
+    instruct_reasoning:
+      description: "Complex reasoning without thinking tags"
+      temperature: 1.0
+      top_p: 1.0
+      top_k: 40
+      min_p: 0.0
+      presence_penalty: 2.0
+      repetition_penalty: 1.0
+
+  # Default settings
+  default_max_tokens: 32768
+  max_output_tokens: 81920
+
+# Nemotron Adapter Settings
+nemotron_adapter: {}  # Empty for now - add Nemotron-specific settings if needed
+
+# OpenAI Adapter Settings (fallback)
+openai_adapter: {}  # Empty for now - add OpenAI-specific settings if needed

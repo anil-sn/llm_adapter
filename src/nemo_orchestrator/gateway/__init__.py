@@ -6,6 +6,9 @@ The main traffic-shaping router for Nemo Orchestrator.
 Handles request routing, protocol adaptation, and response normalization.
 
 Run directly: python src/nemo_orchestrator/gateway/server.py
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
 """
 
 # Don't import server here to avoid circular imports

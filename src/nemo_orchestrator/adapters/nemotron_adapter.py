@@ -1,3 +1,13 @@
+"""
+Nemotron Adapter for LLM Orchestrator
+
+Adapter for NVIDIA Nemotron models.
+Supports thinking/reasoning control and field mapping.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
+
 import json
 import logging
 from typing import Any, AsyncGenerator

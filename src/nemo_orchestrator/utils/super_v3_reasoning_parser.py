@@ -1,3 +1,13 @@
+"""
+Super V3 Reasoning Parser for LLM Orchestrator
+
+Custom reasoning parser for Super V3 models.
+Extends DeepSeekR1ReasoningParser with additional functionality.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
+
 from vllm.reasoning.abs_reasoning_parsers import ReasoningParserManager
 from vllm.reasoning.deepseek_r1_reasoning_parser import DeepSeekR1ReasoningParser
 

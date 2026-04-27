@@ -1,0 +1,34 @@
+# LLM Orchestrator - Nemotron Model Configuration
+# Overrides for nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8"
+  served_model_name: "nemotron-3-super"
+  tokenizer_mode: "auto"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.85     # Tested stable at 85%
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings
+  max_model_len: 196608            # 192K context (tested stable)
+
+  # Batch settings
+  max_num_batched_tokens: 16384    # Conservative for stability
+
+  # Reasoning settings
+  reasoning_parser: "super_v3"     # Nemotron Super V3 parser
+  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # XML format parser

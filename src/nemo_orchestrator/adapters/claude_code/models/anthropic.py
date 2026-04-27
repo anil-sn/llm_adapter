@@ -2,6 +2,10 @@
 
 Pydantic models for Anthropic Messages API
 Anthropic Messages API 的 Pydantic 模型
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
 """
 
 from typing import Annotated, Any, Literal, Optional, Union

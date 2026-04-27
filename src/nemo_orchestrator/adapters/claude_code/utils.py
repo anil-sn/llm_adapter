@@ -1,4 +1,11 @@
-"""Utility functions for Claude Code adapter"""
+"""
+Utility functions for Claude Code adapter
+
+Helper functions for the Claude Code adapter integration.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
 
 import logging
 

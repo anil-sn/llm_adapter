@@ -1,39 +1,47 @@
 #!/usr/bin/env python3
 """
-Nemo-Gateway v6.0: Simple Direct Router
-- Single model: nemotron-3-super
-- No complex aliasing
-- Direct passthrough with protocol translation
+LLM Orchestrator Gateway v7.0 - Model-Agnostic Router
+- Multi-model support via layered configuration
+- Protocol translation (Anthropic → OpenAI)
+- Dynamic adapter routing
+- Load balancing with pulse scheduling
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
 """
 
 import hashlib
 import json
 import uvicorn
 import httpx
-import yaml
 import logging
 import asyncio
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from pathlib import Path
 
-# Fix imports for new package structure
-import sys
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
 from nemo_orchestrator.adapters.factory import get_adapter
 from nemo_orchestrator.scheduler.pulse_scheduler import PulseScheduler
+from nemo_orchestrator.utils.config_loader import load_config, ConfigError
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
-logger = logging.getLogger("nemo-gateway")
+logger = logging.getLogger("llm-gateway")
 
 # Project root is 3 levels up: gateway/ -> nemo_orchestrator/ -> src/ -> project/
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
 
-with open(CONFIG_FILE, "r") as f:
-    config = yaml.safe_load(f)
+# Load configuration using layered config system
+try:
+    config = load_config(project_root=PROJECT_ROOT, validate=True)
+    logger.info(f"Configuration loaded: {config['model']['id']}")
+except ConfigError as e:
+    logger.error(f"Configuration error: {e}")
+    logger.error("Hint: Set LLM_CONFIG environment variable")
+    raise
+except Exception as e:
+    logger.error(f"Failed to load configuration: {e}")
+    raise
 
 app = FastAPI()
 client = httpx.AsyncClient(timeout=None)
@@ -73,7 +81,7 @@ async def proxy_router(request: Request, path: str):
     body_bytes = await request.body()
     try:
         body = json.loads(body_bytes) if body_bytes else {}
-    except:
+    except (json.JSONDecodeError, ValueError):
         body = {}
 
     # Protocol detection

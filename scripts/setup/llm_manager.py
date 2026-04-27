@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Nemo-Orchestrator: True 10/10 Coherent Cluster
-Optimized for vLLM v0.19.0 API
+LLM Orchestrator - Process Manager
+Manages vLLM replicas and gateway with layered configuration support
+Optimized for vLLM v0.19.0+ API
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
 """
 
 import os
 import sys
-import yaml
 import signal
 import subprocess
 import time
@@ -14,17 +17,45 @@ import argparse
 import json
 from pathlib import Path
 
-# Project root is 2 levels up from scripts/setup/
+# Add src to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-CONFIG_FILE = PROJECT_ROOT / "config" / "config.yaml"
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+# Import config loader
+try:
+    from nemo_orchestrator.utils.config_loader import load_config, ConfigError
+except ImportError as e:
+    print(f"Error: Could not import config loader: {e}", file=sys.stderr)
+    print(f"Ensure you're running from project root: {PROJECT_ROOT}", file=sys.stderr)
+    sys.exit(1)
+
 BASE_DIR = PROJECT_ROOT  # For backward compatibility
 
-def load_config():
-    if not CONFIG_FILE.exists():
-        print(f"Error: {CONFIG_FILE} not found.")
+
+def get_config():
+    """
+    Load configuration using layered config system.
+
+    Returns:
+        dict: Merged configuration
+
+    Raises:
+        SystemExit: If config loading fails
+    """
+    try:
+        config = load_config(project_root=PROJECT_ROOT, validate=True)
+        return config
+    except ConfigError as e:
+        print(f"Configuration Error: {e}", file=sys.stderr)
+        print("\nHint: Set LLM_CONFIG environment variable to select model config:", file=sys.stderr)
+        print("  export LLM_CONFIG=config/config-qwen.yaml", file=sys.stderr)
+        print("  export LLM_CONFIG=config/config-nemotron.yaml", file=sys.stderr)
         sys.exit(1)
-    with open(CONFIG_FILE, "r") as f:
-        return yaml.safe_load(f)
+    except Exception as e:
+        print(f"Unexpected error loading config: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 def get_pid_file(name):
     return BASE_DIR / f".{name}.pid"
@@ -185,7 +216,7 @@ def start():
     # Always clean up aggressively first
     aggressive_cleanup()
 
-    config = load_config()
+    config = get_config()
     num_replicas = config["replicas"]["count"]
 
     for i in range(num_replicas):
@@ -209,6 +240,9 @@ def start():
 
         env = os.environ.copy()
         env["CUDA_VISIBLE_DEVICES"] = config["replicas"]["gpu_groups"][i]
+
+        # PyTorch memory fragmentation fix (helps with MoE models)
+        env["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
         venv_bin = str(BASE_DIR / ".venv" / "bin")
         env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
@@ -238,12 +272,26 @@ def start():
             "--max-model-len", str(config["inference"]["max_model_len"]),
             "--trust-remote-code",
             "--tokenizer-mode", config["model"].get("tokenizer_mode", "auto"),
-            "--dtype", "auto",
+            "--dtype", config["hardware"]["dtype"],
         ]
+
+        # Quantization for model weights (critical for MoE models)
+        if quant_config := config.get("quantization"):
+            if quant_method := quant_config.get("method"):
+                cmd.extend(["--quantization", quant_method])
+                print(f"  Weight Quantization: {quant_method.upper()} (reduces model memory ~50%)")
 
         # Hardware optimizations (matching official cookbook)
         if config["hardware"].get("attention_backend"):
             cmd.extend(["--attention-backend", config["hardware"]["attention_backend"]])
+
+        # RoPE Scaling for extended context (YaRN) - via HF overrides
+        if rope_config := config["inference"].get("rope_scaling"):
+            # Pass rope_scaling to HuggingFace model config via --hf-overrides
+            hf_overrides = {"rope_scaling": rope_config}
+            hf_overrides_json = json.dumps(hf_overrides)
+            cmd.extend(["--hf-overrides", hf_overrides_json])
+            print(f"  RoPE Scaling: {rope_config.get('type')} {rope_config.get('factor')}x (via hf-overrides)")
 
         # FEATURE FLAGS
         cmd.append("--no-enable-log-requests")
@@ -258,7 +306,12 @@ def start():
 
         if config["inference"].get("max_num_seqs"):
             cmd.extend(["--max-num-seqs", str(config["inference"]["max_num_seqs"])])
-            # Reduce batch tokens to 2x of typical request size for MoE memory efficiency
+
+        # Use explicit max_num_batched_tokens from config, or calculate default
+        if batched_tokens := config["inference"].get("max_num_batched_tokens"):
+            cmd.extend(["--max-num-batched-tokens", str(batched_tokens)])
+        else:
+            # Fallback: 2x of typical request size for memory efficiency
             max_batched = min(config["inference"]["max_model_len"], 16384)
             cmd.extend(["--max-num-batched-tokens", str(max_batched)])
 
@@ -275,6 +328,10 @@ def start():
 
         if config["hardware"].get("disable_custom_all_reduce"):
             cmd.append("--disable-custom-all-reduce")
+
+        # Enforce eager mode for memory-intensive models (MoE)
+        if config["inference"].get("enforce_eager"):
+            cmd.append("--enforce-eager")
 
         if config["inference"].get("enable_auto_tool_choice"):
             cmd.append("--enable-auto-tool-choice")
@@ -356,7 +413,7 @@ def stop():
     print("[Stop] All processes killed. Cleanup complete.")
 
 def status():
-    config = load_config()
+    config = get_config()
     print("--- Nemo-Orchestrator Cluster Status ---")
     for i in range(config["replicas"]["count"]):
         name = f"vllm_replica_{i}"
@@ -378,7 +435,7 @@ def stop_gateway():
 
 def start_gateway():
     """Start only the gateway, assuming vLLM replicas are already running."""
-    config = load_config()
+    config = get_config()
 
     # Check if gateway is already running
     if is_running("nemo_gateway"):

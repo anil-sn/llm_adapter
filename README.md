@@ -4,6 +4,10 @@
 
 A production-ready inference orchestrator featuring multi-protocol support, intelligent batching, and seamless Claude Code integration.
 
+**Author**: Anil Srirangapatna Nagesh  
+**Version**: 2.0  
+**License**: MIT
+
 ---
 
 ## 🚀 Features
@@ -96,6 +100,46 @@ python tests/unit/test_adapter_unit.py
 # E2E tool execution
 python tests/e2e/test_e2e_tool_execution.py
 ```
+
+### 4. Project Maintenance
+
+```bash
+# Run cleanup script (dry run - shows what would be deleted)
+python scripts/cleanup_project.py --dry-run
+
+# Actual cleanup (removes cache files, logs, PID files, etc.)
+python scripts/cleanup_project.py
+
+# Clean specific project
+python scripts/cleanup_project.py --project /path/to/project
+```
+
+---
+
+## 🧹 Project Maintenance
+
+### Cleanup Script
+
+The project includes a comprehensive cleanup script (`scripts/cleanup_project.py`) that:
+
+- Removes `__pycache__` directories
+- Deletes PID and lock files (`.pid`, `.lock`, `.sock`)
+- Clears log files from `logs/` directory
+- Removes build artifacts (`.pyc`, `.pyo`, `.egg-info`, etc.)
+- Cleans temporary files (`.tmp`, `.temp`, `.bak`, etc.)
+- Removes stale markdown files (keeps essential ones)
+- Updates `.gitignore` with comprehensive patterns
+
+**Usage:**
+```bash
+# Preview what would be cleaned
+python scripts/cleanup_project.py --dry-run
+
+# Perform actual cleanup
+python scripts/cleanup_project.py
+```
+
+**Space Saved:** Typically 100+ MB of cache files, logs, and artifacts.
 
 ---
 

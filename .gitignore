@@ -22,78 +22,127 @@ wheels/
 MANIFEST
 
 # Virtual Environments
+.venv/
 venv/
-env/
 ENV/
-.venv
+env/
+.venv.bak/
 
-# IDEs
-.vscode/
+# IDEs and Editors
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
-.DS_Store
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
 .tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
 .hypothesis/
+.pytest_cache/
 
-# Logs
-logs/*.log
-*.log
-logs/archive/
-*.out
-
-# Model cache & temporary files
-.cache/
-*.tmp
-*.bak
-*.swp
-
-# vLLM / CUDA
-*.nccl
-.triton/
-
-# Environment
-.env
-.env.local
-*.key
-*.pem
-
-# Documentation build
-docs/_build/
-docs/.doctrees/
-
-# Archives (keep structure but not temp files)
-archive/**/*.log
-archive/**/*.tmp
-
-# Project specific
-*.pid
-*.sock
-.repomix-output.txt
-.repomixignore
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Jupyter
-.ipynb_checkpoints/
-*.ipynb
-
-# uv / pip
-uv.lock
+# Build Tools
+*.pyc
+*.pyo
+*.pyd
+.Python
 pip-log.txt
 pip-delete-this-directory.txt
 
-# pytest
-.pytest_cache/
-test-results/
+# Jupyter Notebook
+.ipynb_checkpoints
 
-# Temporary test scripts
-/tmp/test_*.py
+# Environment variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# Secrets and Credentials
+*.pem
+*.key
+secrets/
+credentials/
+*.json.bak
+
+# Logs
+logs/
+*.log
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# PID and Lock Files
+*.pid
+*.lock
+*.sock
+
+# Temporary Files
+*.tmp
+*.temp
+*.bak
+*.backup
+*~
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Model Cache
+*.bin
+*.gguf
+*.safetensors
+*.pth
+*.pt
+*.ckpt
+
+# Archive (deprecated code)
+archive/
+
+# Local Configuration
+config/local.yaml
+config/local.yml
+config/*.local.*
+
+# Profiling
+*.prof
+profile.out
+cache.prof
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Hydra
+hydra/
+
+# Output directories
+output/
+outputs/
+results/
+
+# Generated files
+generated/
+gen/

@@ -1,3 +1,13 @@
+"""
+Legacy Claude Adapter - Deprecated Implementation
+
+Deprecated Claude adapter implementation.
+
+Author: Anil Srirangapatna Nagesh
+Version: 1.0
+Created: 2026-04-27
+"""
+
 import json
 import logging
 import uuid

@@ -1,0 +1,97 @@
+# LLM Orchestrator - Qwen3.5-122B-A10B-GPTQ-Int4 Configuration
+# GPTQ Int4 quantization allows full model in 4x48GB GPUs
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "Qwen/Qwen3.5-122B-A10B-GPTQ-Int4"
+  served_model_name: "qwen-3.5-122b"
+  tokenizer_mode: "auto"
+  trust_remote_code: true          # Required for Qwen
+
+# ============================================================================
+# QUANTIZATION - GPTQ Int4 (Pre-quantized checkpoint)
+# ============================================================================
+quantization:
+  method: "gptq"                   # GPTQ Int4 quantization
+  # Pre-quantized checkpoint, no on-the-fly quantization needed
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "float16"                 # REQUIRED for GPTQ (only supports FP16, not BF16)
+  gpu_memory_utilization: 0.80     # Good starting point for GPTQ
+  # GPTQ saves ~75% weight memory, allowing higher utilization
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # PHASE 4: 640K Extended Context (YaRN 2.5x scaling)
+  max_model_len: 655360            # 640K tokens (2.5x native with YaRN)
+
+  # YaRN RoPE Scaling for extended context
+  rope_scaling:
+    type: "yarn"
+    factor: 2.5
+    original_max_position_embeddings: 262144
+
+  # Memory-efficient features
+  enable_prefix_caching: true      # Improves multi-turn conversations
+  enable_chunked_prefill: true     # Better long-context handling
+
+  # Batch settings - Conservative start
+  max_num_batched_tokens: 16384    # Good balance
+  max_num_seqs: 2                  # 2 concurrent requests
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency
+
+  # Reasoning settings
+  reasoning_parser: "qwen3"        # Qwen3 built-in parser
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # Qwen's tool calling parser
+
+  # Output settings
+  default_max_tokens: 32768        # Qwen recommendation
+  max_output_tokens: 81920         # For complex reasoning (80K)
+
+# ============================================================================
+# PROGRESSIVE SCALING PLAN
+# ============================================================================
+#
+# PHASE 1: 262K Native ✅ COMPLETED
+# - max_model_len: 262144
+# - No rope_scaling needed
+# - Memory: ~38-39GB per GPU
+#
+# PHASE 2: 384K with YaRN 1.5x ✅ SKIPPED (directly to 512K)
+# - max_model_len: 393216
+# - rope_scaling: {type: "yarn", factor: 1.5}
+# - Memory: ~40-42GB per GPU
+#
+# PHASE 3: 512K with YaRN 2.0x ✅ COMPLETED
+# - max_model_len: 524288
+# - rope_scaling factor: 2.0
+# - Memory: ~39GB per GPU (excellent headroom)
+#
+# PHASE 4: 640K with YaRN 2.5x 🎯 CURRENT
+# - max_model_len: 655360
+# - rope_scaling factor: 2.5
+# - Memory: ~43-44GB per GPU (projected, 4-5GB free)
+# - Quality: <5% degradation vs native
+#
+# FUTURE PHASES (if needed):
+# - 768K (3.0x): ~45-46GB per GPU, 5-10% degradation
+# - 1M (4.0x): ~47-48GB per GPU, 10-15% degradation (risky)
+#
+# GPTQ Int4 Notes:
+# - Minimal quality loss (<2% vs FP16 on benchmarks)
+# - 75% memory savings allows extreme context windows
+# - Inference speed similar to FP16 with modern GPUs
+# - 4x48GB GPUs provide enough VRAM for 640K-768K context
+# ============================================================================

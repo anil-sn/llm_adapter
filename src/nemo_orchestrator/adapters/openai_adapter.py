@@ -1,3 +1,12 @@
+"""
+OpenAI Adapter for LLM Orchestrator
+
+Standard OpenAI passthrough for vLLM and other compatible backends.
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
+"""
+
 import json
 import logging
 from typing import Any, AsyncGenerator

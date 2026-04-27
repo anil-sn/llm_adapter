@@ -7,6 +7,9 @@ Provider-specific normalization for different API protocols:
 - ClaudeAdapterV2: Production-ready Claude Code integration
 - NemotronAdapter: NVIDIA Nemotron-specific optimizations
 - OpenAIAdapter: OpenAI Chat Completions API
+
+Author: Anil Srirangapatna Nagesh
+Version: 2.0
 """
 
 from .claude_adapter_v2 import ClaudeAdapterV2
