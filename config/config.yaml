@@ -51,6 +51,7 @@ hardware:
     PYTORCH_CUDA_ALLOC_CONF: "backend:native"
     OMP_NUM_THREADS: "1"
     VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"   # Use FlashAttention 2 (no nvcc needed)
 
 # ============================================================================
 # INFERENCE SETTINGS (Defaults - can be overridden per model)
