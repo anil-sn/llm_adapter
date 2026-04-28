@@ -1,6 +1,10 @@
 # 🔱 Nemo-Orchestrator v3.0 (Extreme)
 ### Coherent Inference Cluster for 4x RTX 6000 Ada (192GB VRAM)
-**Status:** `10.5/10 Optimized` | **Architecture:** `Dual-Replica Speculative MoE` | **Context:** `180k–256k (TurboQuant)`
+**Status:** `ARCHIVED - Reference Only` | **Architecture:** `Dual-Replica Speculative MoE` | **Context:** `180k–256k`
+
+> **⚠️ Note:** This document describes an experimental v3.0 architecture with dual-replica setup.
+> **Current production setup (v2.1.0)** uses single TP=4 with vLLM 0.19.0, FP8 KV cache, and 640K context via YaRN.
+> See main [README.md](../README.md) for current configuration.
 
 ---
 

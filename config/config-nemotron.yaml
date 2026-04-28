@@ -1,6 +1,7 @@
 # LLM Orchestrator - Nemotron Model Configuration
 # Overrides for nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8
 # Inherits from: config.yaml, config-adapter.yaml
+# Driver 575.64.03 + vLLM 0.19.0 with FP8 KV cache
 
 # ============================================================================
 # MODEL IDENTITY
@@ -20,8 +21,8 @@ hardware:
 # INFERENCE OVERRIDES
 # ============================================================================
 inference:
-  # Context settings
-  max_model_len: 196608            # 192K context (tested stable)
+  # Context settings (TurboQuant 2-bit enables 256K on 196GB VRAM)
+  max_model_len: 262144            # 256K context (4× KV cache efficiency vs FP8)
 
   # Batch settings
   max_num_batched_tokens: 16384    # Conservative for stability

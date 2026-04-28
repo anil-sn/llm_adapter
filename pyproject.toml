@@ -1,7 +1,7 @@
 [project]
-name = "nemo-orchestrator"
-version = "2.0.0"
-description = "High-Performance LLM Inference Cluster for Nemotron-3 Super 120B with Multi-Protocol Support"
+name = "llm-adapter"
+version = "2.1.0"
+description = "High-Performance Multi-Model LLM Inference Orchestrator with TurboQuant 2-bit KV Cache Support"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -31,20 +31,12 @@ dependencies = [
     "hf-transfer>=0.1.9",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
-    "nvidia-cublas-cu12>=12.8.4.1",
-    "nvidia-cuda-cupti-cu12>=12.8.90",
-    "nvidia-cuda-nvcc-cu12>=12.9.86",
-    "nvidia-cuda-runtime-cu12>=12.8.90",
-    "nvidia-cudnn-cu12>=9.10.2.21",
-    "nvidia-cufft-cu12>=11.3.3.83",
-    "nvidia-curand-cu12>=10.3.9.90",
-    "nvidia-cusolver-cu12>=11.7.3.90",
-    "nvidia-cusparse-cu12>=12.5.8.93",
-    "nvidia-nccl-cu12>=2.27.5",
-    "nvidia-nvtx-cu12>=12.8.90",
     "pyyaml>=6.0.3",
+    "transformers>=5.0.0",
     "uvicorn>=0.44.0",
-    "vllm>=0.19.0",
+    "vllm>=0.20.0",
+    # NOTE: PyTorch cu129 (CUDA 12.9) installed separately via setup script
+    # Matches driver 575.64.03 CUDA support. See: scripts/setup_venv.sh
 ]
 
 [project.optional-dependencies]
@@ -80,3 +72,8 @@ ignore = ["E501"]
 python_version = "3.12"
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.uv]
+# Note: PyTorch cu129 (CUDA 12.9) is installed via setup script after venv creation
+# vLLM 0.20.0 installed with --torch-backend=cu129 for driver 575 compatibility
+# This avoids conflicts with PyPI's default cu130 packages

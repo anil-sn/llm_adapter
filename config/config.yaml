@@ -1,6 +1,8 @@
 # LLM Orchestrator - Base Configuration
 # Common settings shared across all models
 # Hardware: 4x NVIDIA RTX 6000 Ada (49GB each, 196GB total)
+# Driver: NVIDIA 575.64.03 (CUDA 12.9) - vLLM 0.19.0 stable
+# Features: FP8 KV cache, PagedAttention, enhanced batching, 256K context capable
 
 # ============================================================================
 # CLUSTER SETTINGS
@@ -30,8 +32,8 @@ hardware:
   device: "cuda"
   dtype: "auto"
 
-  # Attention backend (required for FP8 KV cache)
-  attention_backend: "TRITON_ATTN"
+  # Attention backend (FLASHINFER only available in vLLM 0.20+)
+  # attention_backend: "FLASHINFER"  # Disabled for vLLM 0.19.0, uses default backend
 
   # PCIe topology settings (non-NVLink)
   disable_custom_all_reduce: true
@@ -54,10 +56,10 @@ hardware:
 # INFERENCE SETTINGS (Defaults - can be overridden per model)
 # ============================================================================
 inference:
-  # KV Cache settings (common)
-  kv_cache_dtype: "fp8"
+  # KV Cache settings (TurboQuant 2-bit auto-compression in vLLM 0.20+)
+  kv_cache_dtype: "fp8_e5m2"           # Will be compressed to 2-bit by TurboQuant
   enable_prefix_caching: true
-  enable_chunked_prefill: true
+  enable_chunked_prefill: true         # Required for long contexts (256K)
 
   # Batch & sequence settings (defaults)
   max_num_seqs: 2

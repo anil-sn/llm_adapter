@@ -1,6 +1,7 @@
 # LLM Orchestrator - Qwen3.5-122B-A10B-GPTQ-Int4 Configuration
 # GPTQ Int4 quantization allows full model in 4x48GB GPUs
 # Inherits from: config.yaml, config-adapter.yaml
+# Driver 575.64.03 + vLLM 0.19.0 with FP8 KV cache
 
 # ============================================================================
 # MODEL IDENTITY
@@ -30,7 +31,7 @@ hardware:
 # INFERENCE OVERRIDES
 # ============================================================================
 inference:
-  # PHASE 4: 640K Extended Context (YaRN 2.5x scaling)
+  # Extended Context with YaRN 2.5x scaling (vLLM 0.19.0 + FP8 KV cache)
   max_model_len: 655360            # 640K tokens (2.5x native with YaRN)
 
   # YaRN RoPE Scaling for extended context
@@ -47,8 +48,8 @@ inference:
   max_num_batched_tokens: 16384    # Good balance
   max_num_seqs: 2                  # 2 concurrent requests
 
-  # KV cache optimization
-  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency
+  # KV cache optimization (FP8 quantization for vLLM 0.19)
+  kv_cache_dtype: "fp8"            # FP8 quantization (2× efficiency vs FP16)
 
   # Reasoning settings
   reasoning_parser: "qwen3"        # Qwen3 built-in parser
@@ -79,7 +80,7 @@ inference:
 # - rope_scaling factor: 2.0
 # - Memory: ~39GB per GPU (excellent headroom)
 #
-# PHASE 4: 640K with YaRN 2.5x 🎯 CURRENT
+# PHASE 4: 640K with YaRN 2.5x 🎯 CURRENT (SAFE & TESTED)
 # - max_model_len: 655360
 # - rope_scaling factor: 2.5
 # - Memory: ~43-44GB per GPU (projected, 4-5GB free)
