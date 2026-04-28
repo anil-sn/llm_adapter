@@ -48,8 +48,8 @@ inference:
   max_num_batched_tokens: 16384    # Good balance
   max_num_seqs: 2                  # 2 concurrent requests
 
-  # KV cache optimization (FP8 quantization for vLLM 0.19)
-  kv_cache_dtype: "fp8"            # FP8 quantization (2× efficiency vs FP16)
+  # KV cache optimization (vLLM 0.19 compatibility)
+  kv_cache_dtype: "auto"           # auto for vLLM 0.19 (fp8 works but not with FLASH_ATTN)
 
   # Reasoning settings
   reasoning_parser: "qwen3"        # Qwen3 built-in parser

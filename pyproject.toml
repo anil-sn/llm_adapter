@@ -1,7 +1,7 @@
 [project]
 name = "llm-adapter"
 version = "2.1.0"
-description = "High-Performance Multi-Model LLM Inference Orchestrator with TurboQuant 2-bit KV Cache Support"
+description = "High-Performance Multi-Model LLM Inference Orchestrator with Extended Context Support (640K tokens)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -32,11 +32,12 @@ dependencies = [
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
     "pyyaml>=6.0.3",
-    "transformers>=5.0.0",
+    "transformers>=4.56.0,<5.0.0",  # vLLM 0.19 requires transformers <5.0
     "uvicorn>=0.44.0",
-    "vllm>=0.20.0",
-    # NOTE: PyTorch cu129 (CUDA 12.9) installed separately via setup script
-    # Matches driver 575.64.03 CUDA support. See: scripts/setup_venv.sh
+    "vllm==0.19.0",                 # Pin to 0.19.0 for CUDA 12.x compatibility
+    # NOTE: PyTorch 2.10.0+cu129 installed via setup script (see scripts/setup_venv.sh)
+    # vLLM 0.19.0 chosen for CUDA 12.x pre-built wheel availability
+    # Driver: 575.64.03 (CUDA 12.9)
 ]
 
 [project.optional-dependencies]
@@ -74,6 +75,7 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.uv]
-# Note: PyTorch cu129 (CUDA 12.9) is installed via setup script after venv creation
-# vLLM 0.20.0 installed with --torch-backend=cu129 for driver 575 compatibility
-# This avoids conflicts with PyPI's default cu130 packages
+# PyTorch 2.10.0+cu129 installed via setup script (scripts/setup_venv.sh)
+# vLLM 0.19.0 chosen for CUDA 12.x pre-built wheel compatibility
+# CUDA Toolkit 12.4 required for FlashAttention JIT compilation (nvcc)
+# Compatible with NVIDIA Driver 575.64.03 (CUDA 12.9 support)

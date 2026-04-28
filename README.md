@@ -39,20 +39,22 @@ A production-ready inference orchestrator supporting multiple LLMs (Nemotron-3 S
 |-----------|-------------|-------|
 | **Python** | 3.12+ | Required for type hints and modern syntax |
 | **GPU** | 4x RTX 6000 Ada (196GB VRAM) | Or equivalent high-memory GPUs |
-| **NVIDIA Driver** | 575.64.03 (installed) | Latest stable with CUDA 12.9 support |
-| **CUDA** | 12.9 (installed) | Required for vLLM 0.19+ and FP8 KV cache |
+| **NVIDIA Driver** | 575.64.03+ | Latest stable with CUDA 12.9 support |
+| **CUDA Toolkit** | 12.4+ | Required for nvcc (FlashAttention JIT compilation) |
 | **Disk Space** | ~250GB | Model weights (~120GB) + cache + logs |
 | **CPU** | Multi-core with PCIe topology | Non-NVLink GPU configuration |
 | **RAM** | 32GB+ system memory | For model loading and overhead |
 
-### Driver Upgrade Complete ✅
+### Current Configuration ✅
 
-**Driver 575.64.03 installed** - All advanced features now unlocked:
-- ✅ vLLM 0.19.0 stable release with CUDA 12.9 support
-- ✅ FP8 KV cache (2× efficiency vs FP16)
-- ✅ Context expansion to 640K tokens (via YaRN 2.5× scaling)
-- ✅ Enhanced prefix caching for long contexts
-- ✅ PyTorch 2.10.0 with CUDA 12.9 support
+**Production-Ready Stack:**
+- ✅ NVIDIA Driver 575.64.03+ (CUDA 12.9 support)
+- ✅ CUDA Toolkit 12.4 (nvcc for FlashAttention compilation)
+- ✅ vLLM 0.19.0 (CUDA 12.x compatible pre-built wheels)
+- ✅ PyTorch 2.10.0+cu129
+- ✅ FlashAttention 2 backend (best performance)
+- ✅ Context: up to 640K tokens (YaRN 2.5× scaling)
+- ✅ GPTQ Int4 quantization support
 
 ---
 
@@ -101,29 +103,60 @@ Before installation, verify your system meets the requirements:
 
 ```bash
 # Check Python version
-python --version  # Should be 3.12+
+python3.12 --version  # Should be 3.12+
 
 # Check NVIDIA driver
-nvidia-smi  # Should show driver 535.230.02+ (550+ recommended)
+nvidia-smi  # Should show driver 575.64.03+
 
-# Check CUDA version
-nvcc --version  # Should be 12.1+
+# Check CUDA toolkit (if installed)
+nvcc --version  # Should show 12.4+ (will be installed if missing)
 
-# Run comprehensive prerequisite test
-bash scripts/setup/test_nvidia_prerequisites.sh
+# Run comprehensive system check
+bash scripts/check_system_compatibility.sh
 ```
 
-### Python Environment Setup
+### Automated Environment Setup (Recommended)
+
+The `setup_venv.sh` script handles all dependencies automatically:
 
 ```bash
-# Install dependencies with uv (recommended)
-uv sync
+# Run the automated setup script
+bash scripts/setup_venv.sh
 
-# Or with pip
+# This script will:
+# 1. Create virtual environment with Python 3.12
+# 2. Install PyTorch 2.10.0+cu129
+# 3. Install vLLM 0.19.0 (CUDA 12.x compatible)
+# 4. Install all other dependencies
+# 5. Verify installation
+```
+
+### Manual Installation (Alternative)
+
+```bash
+# Create virtual environment
+python3.12 -m venv .venv
+source .venv/bin/activate
+
+# Install PyTorch with CUDA 12.9 support
+pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url https://download.pytorch.org/whl/cu129
+
+# Install vLLM and dependencies
+pip install vllm==0.19.0
 pip install -e .
+```
+
+### CUDA Toolkit Installation (Required for FlashAttention)
+
+If nvcc is not found, install CUDA toolkit:
+
+```bash
+# Install CUDA 12.4 compiler tools
+sudo apt update
+sudo apt install cuda-nvcc-12-4 cuda-cudart-dev-12-4
 
 # Verify installation
-python -c "import nemo_orchestrator; print('✓ Installation successful')"
+nvcc --version
 ```
 
 ### Model Download

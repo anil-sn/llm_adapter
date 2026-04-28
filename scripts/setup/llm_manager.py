@@ -247,10 +247,31 @@ def start():
         venv_bin = str(BASE_DIR / ".venv" / "bin")
         env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
 
+        # Use PyTorch's bundled CUDA libraries to avoid CUDA version mismatch
+        # vLLM wheel may be compiled for CUDA 13, but PyTorch has CUDA 12
+        python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        site_packages = BASE_DIR / ".venv" / "lib" / python_version / "site-packages"
+        torch_lib = str(site_packages / "torch" / "lib")
+        nvidia_cuda_lib = str(site_packages / "nvidia" / "cuda_runtime" / "lib")
+        existing_ld_path = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = f"{torch_lib}:{nvidia_cuda_lib}:{existing_ld_path}" if existing_ld_path else f"{torch_lib}:{nvidia_cuda_lib}"
+
         # Add CUDA nvcc to PATH for FlashInfer JIT compilation
-        cuda_home = env.get("CUDA_HOME", "")
-        if cuda_home and (Path(cuda_home) / "bin").exists():
-            env["PATH"] = f"{cuda_home}/bin:{env['PATH']}"
+        # Try multiple CUDA locations
+        cuda_locations = [
+            env.get("CUDA_HOME", ""),
+            "/usr/local/cuda-12.4",  # Explicit CUDA 12.4 installation
+            "/usr/local/cuda",
+        ]
+
+        for cuda_home in cuda_locations:
+            if cuda_home and (cuda_path := Path(cuda_home)).exists():
+                nvcc_path = cuda_path / "bin" / "nvcc"
+                if nvcc_path.exists():
+                    env["CUDA_HOME"] = str(cuda_path)
+                    env["PATH"] = f"{cuda_path}/bin:{env['PATH']}"
+                    print(f"  CUDA Toolkit: {cuda_path} (nvcc found)")
+                    break
 
         if env_vars := config["hardware"].get("env_vars"):
             for k, v in env_vars.items(): env[k] = str(v)

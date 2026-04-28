@@ -32,8 +32,9 @@ hardware:
   device: "cuda"
   dtype: "auto"
 
-  # Attention backend (FLASHINFER only available in vLLM 0.20+)
-  # attention_backend: "FLASHINFER"  # Disabled for vLLM 0.19.0, uses default backend
+  # Attention backend (nvcc now available)
+  # Use FLASH_ATTN (FlashAttention 2, best performance)
+  attention_backend: "FLASH_ATTN"
 
   # PCIe topology settings (non-NVLink)
   disable_custom_all_reduce: true
@@ -51,14 +52,15 @@ hardware:
     PYTORCH_CUDA_ALLOC_CONF: "backend:native"
     OMP_NUM_THREADS: "1"
     VLLM_WORKER_MULTIPROC_METHOD: "spawn"
-    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"   # Use FlashAttention 2 (no nvcc needed)
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"   # FlashAttention 2 (best performance)
+    VLLM_USE_V1: "0"                       # Disable V1 engine (uses FlashInfer)
 
 # ============================================================================
 # INFERENCE SETTINGS (Defaults - can be overridden per model)
 # ============================================================================
 inference:
-  # KV Cache settings (TurboQuant 2-bit auto-compression in vLLM 0.20+)
-  kv_cache_dtype: "fp8_e5m2"           # Will be compressed to 2-bit by TurboQuant
+  # KV Cache settings (vLLM 0.19 - use auto, fp8_e5m2 requires 0.20+)
+  kv_cache_dtype: "auto"               # Standard KV cache (fp8_e5m2 only in vLLM 0.20+)
   enable_prefix_caching: true
   enable_chunked_prefill: true         # Required for long contexts (256K)
 

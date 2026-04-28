@@ -136,24 +136,37 @@ fi
 echo "✓ PyTorch cu129 verified"
 echo ""
 
-# Step 7: Install vLLM with CUDA 12.9 support using uv
+# Step 7: Install vLLM with CUDA 12.9 support
 echo "=================================================="
 echo "Installing vLLM 0.20+ with CUDA 12.9 backend"
 echo "=================================================="
 echo ""
 
-# Check if uv is available
-if command -v uv &> /dev/null; then
-    echo "Installing vLLM with uv --torch-backend=cu129..."
-    uv pip install "vllm>=0.20.0" --torch-backend=cu129
-else
-    echo "⚠️  WARNING: uv not found, using pip (may get CUDA 13.0 version)"
-    echo "Recommend installing uv: curl -LsSf https://astral.sh/uv/install.sh | sh"
-    $VENV_PYTHON -m pip install "vllm>=0.20.0"
-fi
+# CRITICAL: vLLM 0.20 pre-built wheels are CUDA 13 only (ABI incompatible with CUDA 12)
+# We MUST build from source for CUDA 12.9
+
+echo "Pre-built vLLM wheels are CUDA 13 (incompatible with your CUDA 12.9)"
+echo "Building vLLM from source for CUDA 12.9..."
+echo "⏱️  This takes ~10-15 minutes, but ensures compatibility"
+echo ""
+
+# Set CUDA build environment
+export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"  # RTX 6000 Ada = 8.9
+export MAX_JOBS=$(nproc)
+export VLLM_TARGET_DEVICE=cuda
+
+# Install build dependencies
+echo "Installing build dependencies..."
+$VENV_PYTHON -m pip install --upgrade pip setuptools wheel ninja packaging cmake
+
+# Build vLLM from source (no isolation ensures it uses venv's PyTorch CUDA 12)
+echo ""
+echo "Building vLLM from source (patience required)..."
+$VENV_PYTHON -m pip install --no-build-isolation -v "vllm==0.20.0"
 
 echo ""
-echo "✓ vLLM installed"
+echo "✓ vLLM 0.20 built successfully for CUDA 12.9"
 echo ""
 
 # Step 8: Install other dependencies with pip
@@ -175,7 +188,20 @@ echo ""
 echo "✓ All dependencies installed"
 echo ""
 
-# Step 9: Verify critical packages
+# Step 9: Install llm-adapter package (nemo_orchestrator module)
+echo "=================================================="
+echo "Installing llm-adapter package"
+echo "=================================================="
+echo ""
+
+cd "$PROJECT_DIR"
+$VENV_PYTHON -m pip install -e .
+
+echo ""
+echo "✓ llm-adapter package installed"
+echo ""
+
+# Step 10: Verify critical packages
 echo "=================================================="
 echo "Verifying Critical Packages"
 echo "=================================================="
@@ -205,9 +231,16 @@ else
     echo "❌ FastAPI not installed"
 fi
 
+# nemo_orchestrator (local package)
+if $VENV_PYTHON -c "from nemo_orchestrator.adapters.factory import get_adapter" 2>/dev/null; then
+    echo "✓ nemo_orchestrator: Package installed and importable"
+else
+    echo "❌ nemo_orchestrator: Package not installed"
+fi
+
 echo ""
 
-# Step 10: Final verification
+# Step 11: Final verification
 echo "=================================================="
 echo "Final System Check"
 echo "=================================================="
