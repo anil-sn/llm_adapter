@@ -12,6 +12,32 @@ A production-ready inference orchestrator supporting multiple LLMs (Nemotron-3 S
 
 ---
 
+## 🚀 Quick Start
+
+```bash
+# Clone and setup (automated)
+git clone https://github.com/your-username/llm_adapter.git
+cd llm_adapter
+bash quick-start.sh
+
+# Or manually
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[tools]"  # With tool calling support
+
+# Start LLM
+make start
+# or
+LLM_CONFIG=config/config-qwen36-27b.yaml python scripts/setup/llm_manager.py start
+
+# Test
+make test
+```
+
+**Full installation guide:** See [INSTALL.md](INSTALL.md)
+
+---
+
 ## 🚀 Features
 
 ### Core Capabilities

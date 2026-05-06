@@ -48,7 +48,7 @@ dev = [
     "mypy>=1.15.0",
 ]
 tools = [
-    "duckduckgo-search>=7.0.0",  # Web search tool
+    "ddgs>=1.0.0",  # Web search tool (renamed from duckduckgo-search)
 ]
 
 [project.urls]

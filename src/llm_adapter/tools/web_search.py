@@ -64,20 +64,29 @@ def execute_web_search(query: str, max_results: int = 5) -> Dict[str, Any]:
         >>> print(result["results"][0]["title"])
     """
     try:
+        # Validate query
+        if not query or not query.strip():
+            return {
+                "success": False,
+                "query": query,
+                "results": [],
+                "error": "Search query cannot be empty",
+            }
+
         # Limit results
         max_results = max(1, min(max_results, 10))
 
-        # Try to import duckduckgo_search
+        # Try to import ddgs
         try:
-            from duckduckgo_search import DDGS
+            from ddgs import DDGS
         except ImportError:
             return {
                 "success": False,
                 "query": query,
                 "results": [],
                 "error": (
-                    "duckduckgo_search not installed. "
-                    "Install with: pip install duckduckgo-search"
+                    "ddgs not installed. "
+                    "Install with: pip install ddgs"
                 ),
             }
 
