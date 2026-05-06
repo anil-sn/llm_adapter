@@ -16,7 +16,7 @@ Demonstrates how to use function calling / tool use with the LLM:
 **Prerequisites:**
 ```bash
 # Install web search dependency
-pip install duckduckgo-search
+pip install ddgs
 
 # Ensure LLM is running
 LLM_CONFIG=config/config-qwen36-35b.yaml python scripts/setup/llm_manager.py start
@@ -33,6 +33,38 @@ python examples/tool_calling_example.py
 3. Execute tool calls (web search, calculator, etc.)
 4. Send results back to model
 5. Get final answer incorporating tool results
+
+---
+
+### 2. Live Web Search Test (`test_web_search_live.py`)
+
+End-to-end test demonstrating the complete web search tool calling workflow:
+- LLM receives a question requiring web search
+- Model autonomously calls the `web_search` tool
+- Tool executes real DuckDuckGo search
+- Results are fed back to the model
+- Model synthesizes final answer from search results
+
+**Prerequisites:**
+```bash
+# Install tool dependencies
+pip install -e ".[tools]"
+
+# Ensure LLM is running
+make start
+```
+
+**Usage:**
+```bash
+python examples/test_web_search_live.py
+```
+
+**Expected Output:**
+```
+✅ SUCCESS: LLM called the web_search tool!
+✅ Web search successful! Found 5 results
+✅ COMPLETE SUCCESS: Full tool calling workflow works!
+```
 
 ---
 
