@@ -396,6 +396,7 @@ class ClaudeAdapter(OpenAIAdapter):
         tool_use_detected = False
         content_block_started = False
         buffered_text_chunks = []  # Buffer text until we know if tools are present
+        in_think_block = False  # Track if we're inside <think>...</think> tags
 
         # Tool call accumulator - maps index to accumulated tool call data
         tool_calls_by_index = {}  # {0: {"id": "...", "name": "...", "arguments": "..."}, ...}
@@ -459,29 +460,47 @@ class ClaudeAdapter(OpenAIAdapter):
 
                     if "text" in delta and "content" not in delta: delta["content"] = delta.pop("text")
 
-                    # If we detect tool_use, skip all text content
+                    # CRITICAL: Don't process text if we've already detected tool calls
+                    # This happens when tool_calls appear in earlier chunks
                     if tool_use_detected or choice.get("finish_reason") == "tool_calls":
                         tool_use_detected = True
                         continue
 
+                    # Process text content
                     if not self.thinking_requested:
                         if "reasoning" in delta or "thinking" in delta: continue
                         if content_sent == False and delta.get("content", "").startswith("Okay,"): continue
 
                     text = delta.get("content", "")
                     if text:
-                        # Filter out <think>...</think> tags in streaming mode
-                        if not self.thinking_requested and ("<think>" in text or "</think>" in text):
-                            import re
-                            # Remove any <think> or </think> tags from the chunk
-                            text = re.sub(r'</?think>', '', text)
-                            # Strip any content that looks like thinking
-                            if not text.strip():
-                                continue
+                        # CRITICAL FIX: Properly handle <think>...</think> blocks
+                        # For Qwen models that wrap reasoning in think tags before tool calls,
+                        # we need to skip ALL content inside these blocks (not just the tags)
+                        if not self.thinking_requested:
+                            # Track state across chunks
+                            if "<think>" in text:
+                                in_think_block = True
+
+                            # If we're in a think block, skip this content entirely
+                            if in_think_block:
+                                # Check if this chunk closes the think block
+                                if "</think>" in text:
+                                    in_think_block = False
+                                    # Extract any text AFTER the closing tag
+                                    import re
+                                    match = re.search(r'</think>\s*(.*)', text, re.DOTALL)
+                                    if match:
+                                        text = match.group(1).strip()
+                                        if not text:
+                                            continue
+                                    else:
+                                        continue
+                                else:
+                                    # Still inside think block, skip this entire chunk
+                                    continue
 
                         if text:
-                            # Buffer text instead of sending immediately
-                            # We'll send it only if no tool_calls are detected
+                            # Buffer text (will be sent only if no tools detected)
                             buffered_text_chunks.append(text)
 
                     if "usage" in chunk and chunk["usage"]:
