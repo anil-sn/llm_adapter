@@ -59,7 +59,7 @@ async def list_models():
             "id": SERVED_MODEL,
             "object": "model",
             "created": int(time.time()),
-            "owned_by": "nemo-orchestrator",
+            "owned_by": "llm-adapter",
             "root": config["model"]["id"],
             "max_model_len": config["inference"]["max_model_len"],
         }]

@@ -1,0 +1,129 @@
+# LLM Orchestrator - Qwen3.6-27B Configuration (1M CONTEXT)
+# Compressed-Tensors 4-bit quantization + FP8 KV cache
+# 1M token context via YaRN 8× RoPE scaling
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "cyankiwi/Qwen3.6-27B-AWQ-INT4"
+  served_model_name: "qwen-3.6-27b"
+  tokenizer_mode: "auto"
+  trust_remote_code: true          # Required for Qwen
+
+# ============================================================================
+# QUANTIZATION STRATEGY
+# ============================================================================
+# Model Weights: Compressed-Tensors/AWQ 4-bit (auto-detected from model config)
+# KV Cache: FP8 (specified below - critical for 1M context memory efficiency)
+# Combined: ~75% weight reduction + ~50% KV cache reduction vs FP16
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                    # Compressed-tensors supports FP16 and BF16
+  gpu_memory_utilization: 0.90     # Higher utilization for 1M context
+  tensor_parallel_size: 4          # Use all 4 GPUs
+
+  # Compressed-tensors/AWQ works on Ada (SM 8.9) - FP8 KV cache supported!
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Extended context window - 1M tokens with YaRN RoPE scaling
+  max_model_len: 1048576           # 1M tokens (~8x native with YaRN)
+
+  # YaRN RoPE Scaling for 1M context
+  rope_scaling:
+    type: "yarn"
+    factor: 8.0                    # 8× scaling from 128K native
+    original_max_position_embeddings: 131072
+
+  # Memory-efficient features (CRITICAL for 1M)
+  enable_prefix_caching: true      # Reuses KV cache for repeated prefixes
+  enable_chunked_prefill: true     # Processes long prompts in chunks
+
+  # Batch settings - Optimized for 1M context (27B is smaller than 35B)
+  max_num_batched_tokens: 16384    # Conservative for memory
+  max_num_seqs: 2                  # 2 concurrent requests (27B can handle more)
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency (critical for 1M)
+
+  # Reasoning settings
+  reasoning_parser: "qwen3"        # Qwen3 built-in parser
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # Qwen's tool calling parser
+
+  # Output settings (conservative for 1M context)
+  default_max_tokens: 16384        # Default output length
+  max_output_tokens: 65536         # Max output for 1M context (64K)
+
+# ============================================================================
+# MEMORY BUDGET ESTIMATE - 1M CONTEXT
+# ============================================================================
+#
+# Hardware: 4× RTX 6000 Ada (49GB each) = 196GB total
+#
+# Model Weights (Compressed-Tensors/AWQ 4-bit):
+#   - Qwen3.6-27B quantized: ~15-18GB across 4 GPUs (~4-5GB per GPU)
+#
+# KV Cache (1M context, FP8, 2 sequences):
+#   - Per sequence (1M tokens, FP8): ~80-100GB
+#   - With max_num_seqs=2: ~160-200GB total
+#   - BUT: With chunked prefill and prefix caching, actual usage is lower
+#   - Practical usage with 2 seqs: ~100-140GB
+#   - Distributed across 4 GPUs: ~25-35GB per GPU
+#
+# Total Memory Usage (1M context, 2 sequences):
+#   - Model weights: ~18GB
+#   - KV cache (1M tokens, 2 seqs): ~100-140GB
+#   - Activations & overhead: ~20-30GB
+#   - Total: ~138-188GB
+#   - Headroom: ~8-58GB (4-30% free)
+#
+# CONCLUSION: 1M context is FEASIBLE with 27B model:
+#   - Smaller model weights than 35B (~5GB less)
+#   - Can support 2 concurrent requests (vs 1 for 35B)
+#   - Better throughput for production workloads
+#   - FP8 KV cache is critical for memory efficiency
+#
+# PROGRESSIVE TESTING PLAN:
+# - Start with 256K, test stability
+# - Scale to 512K, monitor memory with 2 concurrent requests
+# - Scale to 768K, verify quality
+# - Finally attempt 1M if stable
+#
+# ============================================================================
+# DEPLOYMENT NOTES - 1M CONTEXT
+# ============================================================================
+#
+# ✅ Compressed-tensors/AWQ quantization: Compatible with Ada (SM 8.9)
+# ✅ FP8 KV cache: Supported on Ada GPUs
+# ✅ Standard CUDA kernels work on Ada architecture
+# ✅ Excellent memory efficiency with 4-bit weights + FP8 KV cache
+# ✅ 27B model allows 2 concurrent requests vs 1 for 35B
+#
+# ⚠️ QUALITY CONSIDERATIONS (1M context with 8× RoPE scaling):
+#   - YaRN 8× may degrade quality 15-25% vs native context
+#   - Test with real workloads before production use
+#   - Consider using 512K-768K for better quality/memory tradeoff
+#   - Long-range attention may be less accurate at 1M
+#
+# 🔧 TUNING OPTIONS:
+#   - If OOM with 2 seqs: Set max_num_seqs=1
+#   - If OOM: Reduce to 768K (factor: 6.0) or 512K (factor: 4.0)
+#   - If stable with headroom: Can try max_num_seqs=3
+#   - Monitor: watch -n 1 nvidia-smi
+#
+# 📊 27B vs 35B COMPARISON:
+#   - 27B: Faster, less memory, 2+ concurrent requests possible
+#   - 35B: Better quality, more memory, 1 concurrent request
+#   - Both support 1M context with RoPE scaling
+#   - Choose based on: quality needs vs throughput needs
+#
+# ============================================================================

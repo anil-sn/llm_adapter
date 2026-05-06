@@ -130,13 +130,13 @@ echo ""
 
 # Step 3: Validate configuration
 print_info "Validating configuration..."
-if python3 -m src.nemo_orchestrator.utils.config_loader 2>&1 | grep -q "✓"; then
+if python3 -m src.llm_adapter.utils.config_loader 2>&1 | grep -q "✓"; then
     print_success "Configuration validated"
 else
     print_error "Configuration validation failed"
     echo ""
     echo "Run this to see details:"
-    echo "  LLM_CONFIG=$CONFIG_FILE python3 -m src.nemo_orchestrator.utils.config_loader"
+    echo "  LLM_CONFIG=$CONFIG_FILE python3 -m src.llm_adapter.utils.config_loader"
     exit 1
 fi
 

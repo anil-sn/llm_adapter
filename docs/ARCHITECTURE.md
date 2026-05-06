@@ -1,12 +1,12 @@
-# Nemo Orchestrator Architecture
+# LLM Adapter Architecture
 
 ## Overview
 
-Nemo Orchestrator is a high-performance inference cluster designed for Nemotron-3 Super 120B model, featuring multi-protocol support and production-ready Claude Code integration.
+LLM Adapter is a high-performance inference cluster designed for Nemotron-3 Super 120B model, featuring multi-protocol support and production-ready Claude Code integration.
 
 ## Components
 
-###  1. Gateway (`src/nemo_orchestrator/gateway/`)
+###  1. Gateway (`src/llm_adapter/gateway/`)
 
 The main traffic-shaping router that:
 - Routes requests to appropriate adapters based on model ID
@@ -14,7 +14,7 @@ The main traffic-shaping router that:
 - Manages response normalization
 - Provides health checking and monitoring
 
-### 2. Adapters (`src/nemo_orchestrator/adapters/`)
+### 2. Adapters (`src/llm_adapter/adapters/`)
 
 Protocol-specific normalization layers:
 
@@ -36,14 +36,14 @@ Protocol-specific normalization layers:
 - Direct OpenAI Chat Completions API support
 - Minimal overhead pass-through
 
-### 3. Pulse Scheduler (`src/nemo_orchestrator/scheduler/`)
+### 3. Pulse Scheduler (`src/llm_adapter/scheduler/`)
 
 Temporal coalescing engine for request batching:
 - Configurable batching window (5ms-30ms)
 - Smart request grouping
 - Throughput optimization
 
-### 4. Claude Code Converters (`src/nemo_orchestrator/adapters/claude_code/`)
+### 4. Claude Code Converters (`src/llm_adapter/adapters/claude_code/`)
 
 Production-ready converters extracted from claude-adapter-py:
 

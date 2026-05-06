@@ -18,7 +18,7 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from nemo_orchestrator.utils.config_loader import (
+from llm_adapter.utils.config_loader import (
     load_config,
     deep_merge,
     ConfigError,
@@ -26,7 +26,7 @@ from nemo_orchestrator.utils.config_loader import (
     ConfigValidationError,
     load_yaml_file
 )
-from nemo_orchestrator.utils.config_schema import validate_config, Config
+from llm_adapter.utils.config_schema import validate_config, Config
 
 
 class TestDeepMerge:

@@ -198,9 +198,9 @@ LLM_CONFIG=config/config-qwen.yaml python scripts/setup/llm_manager.py start
 ### Test Config Loading
 ```bash
 # Test config loader utility
-cd /path/to/nemo_orchestrator
+cd /path/to/llm_adapter
 export LLM_CONFIG=config/config-qwen.yaml
-python -m src.nemo_orchestrator.utils.config_loader
+python -m src.llm_adapter.utils.config_loader
 
 # Should output:
 # - Loaded model config: config/config-qwen.yaml
@@ -284,7 +284,7 @@ curl http://localhost:8888/v1/models | jq '.data[0].id'
 **Debug:**
 ```bash
 # Test config loader
-python -m src.nemo_orchestrator.utils.config_loader
+python -m src.llm_adapter.utils.config_loader
 
 # Check output for:
 # - Which files loaded
@@ -317,7 +317,7 @@ hardware:
 python -c "import yaml; yaml.safe_load(open('config/config-qwen.yaml'))"
 
 # Test full load
-LLM_CONFIG=config/config-qwen.yaml python -m src.nemo_orchestrator.utils.config_loader
+LLM_CONFIG=config/config-qwen.yaml python -m src.llm_adapter.utils.config_loader
 ```
 
 ### 4. **Version Control**
@@ -348,7 +348,7 @@ config/config-qwen.yaml     # Model-specific
 2. Extract base settings → `config.yaml`
 3. Extract model-specific → `config-qwen.yaml` or `config-nemotron.yaml`
 4. Extract adapter rules → `config-adapter.yaml`
-5. Test loading: `python -m src.nemo_orchestrator.utils.config_loader`
+5. Test loading: `python -m src.llm_adapter.utils.config_loader`
 6. Verify behavior matches before migration
 
 ---

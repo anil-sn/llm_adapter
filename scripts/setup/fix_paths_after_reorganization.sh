@@ -24,8 +24,8 @@ else
     echo "✅ config/config.yaml found"
 fi
 
-if [ ! -f "$PROJECT_ROOT/src/nemo_orchestrator/gateway/server.py" ]; then
-    echo "❌ ERROR: src/nemo_orchestrator/gateway/server.py not found"
+if [ ! -f "$PROJECT_ROOT/src/llm_adapter/gateway/server.py" ]; then
+    echo "❌ ERROR: src/llm_adapter/gateway/server.py not found"
     ((ERRORS++))
 else
     echo "✅ Gateway server.py found"
@@ -44,7 +44,7 @@ if [ $ERRORS -gt 0 ]; then
     echo "❌ $ERRORS critical files missing. Cannot proceed."
     echo ""
     echo "Make sure you've copied the entire reorganized project:"
-    echo "  rsync -avz ~/coding/nemo_orchestrator/ server:/path/to/nemo_orchestrator/"
+    echo "  rsync -avz ~/coding/llm_adapter/ server:/path/to/llm_adapter/"
     exit 1
 fi
 

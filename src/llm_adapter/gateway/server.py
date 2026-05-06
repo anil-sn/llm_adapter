@@ -20,15 +20,15 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from pathlib import Path
 
-from nemo_orchestrator.adapters.factory import get_adapter
-from nemo_orchestrator.scheduler.pulse_scheduler import PulseScheduler
-from nemo_orchestrator.utils.config_loader import load_config, ConfigError
+from llm_adapter.adapters.factory import get_adapter
+from llm_adapter.scheduler.pulse_scheduler import PulseScheduler
+from llm_adapter.utils.config_loader import load_config, ConfigError
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(name)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("llm-gateway")
 
-# Project root is 3 levels up: gateway/ -> nemo_orchestrator/ -> src/ -> project/
+# Project root is 3 levels up: gateway/ -> llm_adapter/ -> src/ -> project/
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 # Load configuration using layered config system
@@ -69,7 +69,7 @@ async def list_models():
             "id": SERVED_MODEL,
             "object": "model",
             "created": int(time.time()),
-            "owned_by": "nemo-orchestrator",
+            "owned_by": "llm-adapter",
             "root": config["model"]["id"],
             "max_model_len": config["inference"]["max_model_len"],
         }]

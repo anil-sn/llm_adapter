@@ -20,7 +20,7 @@ from huggingface_hub import snapshot_download
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from nemo_orchestrator.utils.config_loader import load_config, ConfigError
+from llm_adapter.utils.config_loader import load_config, ConfigError
 
 def get_config():
     """Load configuration using the config loader."""

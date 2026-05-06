@@ -23,7 +23,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Import config loader
 try:
-    from nemo_orchestrator.utils.config_loader import load_config, ConfigError
+    from llm_adapter.utils.config_loader import load_config, ConfigError
 except ImportError as e:
     print(f"Error: Could not import config loader: {e}", file=sys.stderr)
     print(f"Ensure you're running from project root: {PROJECT_ROOT}", file=sys.stderr)
@@ -186,7 +186,7 @@ def aggressive_cleanup():
     # Also kill by process name for any stragglers
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "python.*nemo_orchestrator"],
+            ["pgrep", "-f", "python.*llm_adapter"],
             capture_output=True, text=True
         )
         if result.returncode == 0:
@@ -392,7 +392,7 @@ def start():
         time.sleep(1)
 
     print(f"Launching Nemo-Gateway on Port {config['cluster']['gateway_port']}...")
-    gateway_path = BASE_DIR / "src" / "nemo_orchestrator" / "gateway" / "server.py"
+    gateway_path = BASE_DIR / "src" / "llm_adapter" / "gateway" / "server.py"
     if not gateway_path.exists():
         # Fallback to old location for backward compatibility
         gateway_path = BASE_DIR / "nemo_gateway.py"
@@ -465,7 +465,7 @@ def start_gateway():
         time.sleep(1)
 
     print(f"[Start Gateway] Launching Nemo-Gateway on Port {config['cluster']['gateway_port']}...")
-    gateway_path = PROJECT_ROOT / "src" / "nemo_orchestrator" / "gateway" / "server.py"
+    gateway_path = PROJECT_ROOT / "src" / "llm_adapter" / "gateway" / "server.py"
     if not gateway_path.exists():
         # Fallback to old location
         gateway_path = PROJECT_ROOT / "nemo_gateway.py"

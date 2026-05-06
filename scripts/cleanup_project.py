@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Project Cleanup Script for nemo_orchestrator
+Project Cleanup Script for llm_adapter
 =============================================
 
 This script performs comprehensive cleanup of the project by:

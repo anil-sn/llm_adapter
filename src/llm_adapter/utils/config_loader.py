@@ -471,7 +471,7 @@ def get_config(
         Merged configuration dictionary
 
     Examples:
-        >>> from nemo_orchestrator.utils.config_loader import get_config
+        >>> from llm_adapter.utils.config_loader import get_config
         >>> config = get_config()
         >>> model_id = config["model"]["id"]
     """

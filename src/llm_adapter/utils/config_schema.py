@@ -379,8 +379,8 @@ def validate_config(config_dict: Dict[str, Any]) -> Config:
         ValueError: If validation fails
 
     Examples:
-        >>> from nemo_orchestrator.utils.config_loader import load_config
-        >>> from nemo_orchestrator.utils.config_schema import validate_config
+        >>> from llm_adapter.utils.config_loader import load_config
+        >>> from llm_adapter.utils.config_schema import validate_config
         >>> config_dict = load_config()
         >>> validated = validate_config(config_dict)
         >>> assert validated.hardware.tensor_parallel_size > 0
@@ -399,7 +399,7 @@ if __name__ == "__main__":
     # Add parent directory to path for imports
     sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-    from nemo_orchestrator.utils.config_loader import load_config
+    from llm_adapter.utils.config_loader import load_config
 
     print("=" * 80)
     print("Testing Configuration Schema Validation")

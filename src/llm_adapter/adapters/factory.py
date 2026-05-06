@@ -24,7 +24,7 @@ from .openai_adapter import OpenAIAdapter
 from .nemotron_adapter import NemotronAdapter
 from .qwen_adapter import QwenAdapter
 
-from nemo_orchestrator.utils.config_loader import load_config, ConfigError
+from llm_adapter.utils.config_loader import load_config, ConfigError
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 

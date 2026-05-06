@@ -4,11 +4,11 @@
 Nemo-Orchestrator is a high-performance inference cluster for large language models (specifically Nemotron-3 120B), optimized for multi-GPU workstations. It uses a custom gateway with an adapter-based architecture to support both OpenAI and Anthropic protocols, featuring a "Pulse Scheduler" for high-throughput batching and "TokenGuard" for context safety.
 
 ## Key Directories
-- `nemo_orchestrator/`: Core application directory.
-- `nemo_orchestrator/adapters/`: Provider-specific normalization (Claude, Nemotron, OpenAI).
-- `nemo_orchestrator/config.yaml`: Central system configuration.
-- `nemo_orchestrator/nemo_gateway.py`: The main traffic-shaping router.
-- `nemo_orchestrator/scheduler.py`: The temporal coalescing engine (Pulse Scheduler).
+- `llm_adapter/`: Core application directory.
+- `llm_adapter/adapters/`: Provider-specific normalization (Claude, Nemotron, OpenAI).
+- `llm_adapter/config.yaml`: Central system configuration.
+- `llm_adapter/nemo_gateway.py`: The main traffic-shaping router.
+- `llm_adapter/scheduler.py`: The temporal coalescing engine (Pulse Scheduler).
 
 ## Common Commands
 

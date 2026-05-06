@@ -1,10 +1,10 @@
 """
-Nemo Orchestrator Main Entry Point
+LLM Adapter Main Entry Point
 
-Main entry point for running the Nemo Orchestrator gateway server.
+Main entry point for running the LLM Adapter gateway server.
 
 Usage:
-    python -m nemo_orchestrator.main
+    python -m llm_adapter.main
 
 Author: Anil Srirangapatna Nagesh
 Version: 2.0
@@ -19,13 +19,13 @@ src_path = Path(__file__).parent
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from nemo_orchestrator.gateway.server import app, logger
+from llm_adapter.gateway.server import app, logger
 
 
 def main():
     """Main entry point for the orchestrator."""
     import uvicorn
-    from nemo_orchestrator.utils.config_loader import load_config
+    from llm_adapter.utils.config_loader import load_config
     
     # Load configuration
     PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
@@ -33,7 +33,7 @@ def main():
     
     port = config.get("cluster", {}).get("gateway_port", 8000)
     
-    logger.info(f"Starting Nemo Orchestrator Gateway on port {port}")
+    logger.info(f"Starting LLM Adapter Gateway on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
 
 

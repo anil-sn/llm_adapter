@@ -1,5 +1,5 @@
 """
-Nemo Orchestrator - High-Performance LLM Inference Cluster
+LLM Adapter - High-Performance LLM Inference Cluster
 ===========================================================
 
 A production-ready inference orchestrator for Nemotron-3 Super 120B model,
@@ -17,8 +17,8 @@ __version__ = "2.0.0"
 __author__ = "asrirang"
 
 # Avoid circular imports - don't import submodules here
-# Use: from nemo_orchestrator.adapters import ClaudeAdapterV2
-# Not: from nemo_orchestrator import ClaudeAdapterV2
+# Use: from llm_adapter.adapters import ClaudeAdapterV2
+# Not: from llm_adapter import ClaudeAdapterV2
 
 __all__ = [
     "__version__",

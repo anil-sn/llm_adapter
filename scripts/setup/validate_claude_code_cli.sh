@@ -112,7 +112,7 @@ if [ $FAILED -eq 0 ]; then
     echo "  🎉 All tests passed! Claude Code is working with your Nemotron gateway."
     echo ""
     echo "  Try these next:"
-    echo "    cd ~/coding/nemo_orchestrator"
+    echo "    cd ~/coding/llm_adapter"
     echo "    claude 'Review config.yaml and explain the memory settings'"
     echo "    claude 'What are the main components in this codebase?'"
 else
@@ -121,7 +121,7 @@ else
     echo "  Troubleshooting:"
     echo "    1. Verify gateway is running: curl ${GATEWAY_URL}/health"
     echo "    2. Check Claude Code config: cat ~/.config/claude/settings.json"
-    echo "    3. Check logs: tail ~/Coding/nemo_orchestrator/logs/nemo_gateway.log"
+    echo "    3. Check logs: tail ~/Coding/llm_adapter/logs/nemo_gateway.log"
 fi
 
 echo "========================================================================="
