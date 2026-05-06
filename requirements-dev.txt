@@ -16,3 +16,6 @@ black>=24.0.0
 
 # Tool calling (for examples)
 ddgs>=1.0.0
+
+# HTTP client (for tests)
+requests>=2.31.0
