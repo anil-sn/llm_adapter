@@ -93,6 +93,8 @@ Thumbs.db
 *.pid
 *.lock
 *.sock
+.nemo_gateway.pid
+.vllm_replica_0.pid
 
 # Temporary Files
 *.tmp
@@ -100,6 +102,8 @@ Thumbs.db
 *.bak
 *.backup
 *~
+~/
+~
 
 # Database
 *.db
@@ -146,3 +150,4 @@ results/
 # Generated files
 generated/
 gen/
+.claude/
