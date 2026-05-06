@@ -33,8 +33,9 @@ hardware:
   dtype: "auto"
 
   # Attention backend (nvcc now available)
-  # Use FLASH_ATTN (FlashAttention 2, best performance)
-  attention_backend: "FLASH_ATTN"
+  # TRITON_ATTN is safer default - supports both auto and fp8 kv_cache
+  # FLASH_ATTN is faster but incompatible with fp8 kv_cache
+  attention_backend: "TRITON_ATTN"
 
   # PCIe topology settings (non-NVLink)
   disable_custom_all_reduce: true
@@ -52,7 +53,7 @@ hardware:
     PYTORCH_CUDA_ALLOC_CONF: "backend:native"
     OMP_NUM_THREADS: "1"
     VLLM_WORKER_MULTIPROC_METHOD: "spawn"
-    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"   # FlashAttention 2 (best performance)
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"  # Safer default - supports fp8 kv_cache
     VLLM_USE_V1: "0"                       # Disable V1 engine (uses FlashInfer)
 
 # ============================================================================

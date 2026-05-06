@@ -16,6 +16,7 @@ model:
 # ============================================================================
 hardware:
   gpu_memory_utilization: 0.85     # Tested stable at 85%
+  attention_backend: "TRITON_ATTN" # Explicit backend for consistency
 
 # ============================================================================
 # INFERENCE OVERRIDES

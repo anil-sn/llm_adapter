@@ -22,6 +22,7 @@ model:
 hardware:
   tensor_parallel_size: 4
   gpu_memory_utilization: 0.60  # Even more conservative
+  attention_backend: "TRITON_ATTN"  # Required for fp8 kv_cache
   enforce_eager: true
   env_vars:
     VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"

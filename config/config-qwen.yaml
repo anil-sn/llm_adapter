@@ -25,6 +25,7 @@ quantization:
 hardware:
   dtype: "float16"                 # REQUIRED for GPTQ (only supports FP16, not BF16)
   gpu_memory_utilization: 0.80     # Good starting point for GPTQ
+  attention_backend: "TRITON_ATTN" # Explicit backend for consistency
   # GPTQ saves ~75% weight memory, allowing higher utilization
 
 # ============================================================================

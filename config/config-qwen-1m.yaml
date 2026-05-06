@@ -25,6 +25,7 @@ quantization:
 hardware:
   dtype: "float16"                 # REQUIRED for GPTQ (only supports FP16, not BF16)
   gpu_memory_utilization: 0.90     # Higher utilization for 1M context (monitor closely)
+  attention_backend: "TRITON_ATTN" # Required for fp8 kv_cache (FLASH_ATTN doesn't support fp8)
   # GPTQ saves ~75% weight memory, TurboQuant saves 4× KV cache memory
 
 # ============================================================================

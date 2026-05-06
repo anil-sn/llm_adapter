@@ -26,6 +26,7 @@ hardware:
   dtype: "auto"                    # Compressed-tensors supports FP16 and BF16
   gpu_memory_utilization: 0.90     # Higher utilization for 1M context (monitor closely)
   tensor_parallel_size: 4          # Use all 4 GPUs
+  attention_backend: "TRITON_ATTN" # Required for fp8 kv_cache (FLASH_ATTN doesn't support fp8)
 
   # Compressed-tensors works on Ada (SM 8.9) - FP8 KV cache supported!
 
