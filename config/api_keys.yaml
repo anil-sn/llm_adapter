@@ -1,0 +1,32 @@
+# API Key Configuration
+# Assign API keys to users for GPU access control
+
+# API Keys (key -> username mapping)
+api_keys:
+  # Admin Key
+  "EDGE-AI-ADMIN": "admin"
+
+  # Team API Keys - Edge AI GPU Access
+  "EDGE-AI-HERMES-ANIL": "anil-hermes"
+  "EDGE-AI-CLAUDE-ANIL": "anil"
+  "EDGE-AI-CLAUDE-ANUJ": "anuj"
+  "EDGE-AI-CLAUDE-THEO": "theo"
+  "EDGE-AI-CLAUDE-MOULI": "mouli"
+  "EDGE-AI-CLAUDE-SHASH": "shash"
+
+  # Localhost development (optional - localhost bypass enabled by default)
+  "localhost": "localhost"
+
+# Settings
+enforce_api_keys: true  # Set to false to disable API key enforcement
+allow_localhost_bypass: true  # Allow localhost without API key
+blocked_usernames:
+  - "unknown"
+  - "anonymous"
+  - "test"
+  - "guest"
+  # Note: "admin" is allowed as a valid API key username
+
+# Key format validation
+require_prefix: "EDGE-AI-"  # All keys must start with "EDGE-AI-"
+min_key_length: 10  # Minimum key length (reduced for static keys)

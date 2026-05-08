@@ -1,0 +1,21 @@
+# User identification configuration
+# Maps IP addresses and hostnames to friendly usernames
+
+# Direct IP mapping (highest priority)
+ip_mapping:
+  "127.0.0.1": "localhost"
+  "10.172.248.50": "zpa-connector"  # Zscaler Private Access Connector
+  # Add your known IPs here:
+  # "192.168.1.50": "john"
+
+# Hostname mapping (from reverse DNS)
+hostname_mapping:
+  "plnx-zpaconnector1": "zpa-connector"
+  "plnx-zpaconnector1.calix.local": "zpa-connector"
+  "hermes": "hermes"
+  "claude-code": "claude"
+  "openwebui": "webui"
+  # Add container/host names here
+
+# Default for unrecognized clients
+default_user: "unknown"
