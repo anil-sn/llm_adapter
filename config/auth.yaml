@@ -1,0 +1,32 @@
+# Authentication Configuration
+# Control who can access your GPU resources
+
+# Enable/disable authentication
+enabled: true
+
+# Require X-User-Name header for GPU access
+require_user_header: true
+
+# Blocked usernames (case-insensitive)
+blocked_usernames:
+  - "unknown"
+  - "anonymous"
+  - "test"
+  - "guest"
+  - "admin"
+  - "root"
+
+# Minimum username length
+min_username_length: 2
+
+# Maximum username length
+max_username_length: 50
+
+# Allow IP-based access without header (set to false to strictly require header)
+allow_ip_fallback: false
+
+# Whitelisted IPs (can access without X-User-Name header)
+# Leave empty to require header for all IPs
+whitelisted_ips: []
+  # - "127.0.0.1"
+  # - "10.172.249.149"

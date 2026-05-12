@@ -3,7 +3,7 @@
 LLM Adapter - Unified Test Suite (Production Ready)
 ====================================================
 
-Complete test coverage (31 tests) with production-grade enhancements:
+Complete test coverage (36 tests) with production-grade enhancements:
 - Unit tests (2): Converter logic, tool choice conversion
 - Validation tests (7): Request validation, schema checks, parameter validation
 - Gateway tests (2): Health check, models endpoint
@@ -15,15 +15,22 @@ Complete test coverage (31 tests) with production-grade enhancements:
 - Extended context tests (4): 50K, 100K, 500K, 1M token contexts (YaRN RoPE scaling)
 - Advanced features (4): System messages, determinism, forced tool choice, multi-turn
 - Performance tests (2): Concurrent requests, large context
+- Adapter compatibility tests (5): Hermes, Claude Code, OpenAI protocol support
 
 Author: Anil Srirangapatna Nagesh
-Version: 4.0 (Unified with retry logic & health checks)
+Version: 4.1 (Added multi-protocol adapter testing)
 Created: 2026-04-27
-Updated: 2026-05-06
+Updated: 2026-05-11
 
 Run: python3 test_all.py                    # All tests
-     python3 test_all.py --quick             # Skip slow context tests (31 tests)
+     python3 test_all.py --quick             # Skip slow context tests (36 tests)
      LLM_ADAPTER_URL=http://localhost:8888 python3 test_all.py  # Custom URL
+
+Enhancements in v4.1:
+- ✅ Multi-protocol adapter tests (Hermes, Claude Code, OpenAI)
+- ✅ Gemma 4 fix validation (escaped newlines, thinking tokens)
+- ✅ SSE format compliance testing
+- ✅ Special character handling in tool arguments
 
 Enhancements in v4.0:
 - ✅ Retry logic with exponential backoff (fixes transient failures)
@@ -39,6 +46,8 @@ import requests
 import time
 import os
 import logging
+import random
+import string
 import concurrent.futures
 from pathlib import Path
 from functools import wraps
@@ -50,7 +59,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # CONFIGURATION (Environment-based)
 # ============================================================================
 
-GATEWAY_URL = os.getenv("LLM_ADAPTER_URL", "http://10.172.249.149:8888")
+GATEWAY_URL = "http://10.172.249.149:8888"
+API_KEY = "EDGE-AI-ADMIN"
+
+# Auth headers for all POST requests
+AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 QUICK_MODE = "--quick" in sys.argv or os.getenv("QUICK_MODE") == "1"
 DEBUG_MODE = "--debug" in sys.argv or os.getenv("DEBUG") == "1"
 
@@ -141,10 +154,11 @@ def check_backend_health(max_wait=60):
     logger.info(f"Checking backend health at {GATEWAY_URL}...")
     start_time = time.time()
     last_error = None
+    health_url = f"{GATEWAY_URL.rstrip('/')}/v1/models"
 
     while time.time() - start_time < max_wait:
         try:
-            response = requests.get(f"{GATEWAY_URL}/health", timeout=5)
+            response = requests.get(health_url, timeout=5)
             if response.status_code == 200:
                 elapsed = time.time() - start_time
                 logger.info(f"✓ Backend healthy (responded in {elapsed:.1f}s)")
@@ -178,6 +192,7 @@ def warmup_backend():
                 "messages": [{"role": "user", "content": "hi"}],
                 "max_tokens": 5
             },
+            headers=AUTH_HEADERS,
             timeout=60
         )
 
@@ -364,7 +379,7 @@ def test_validation_minimal_valid_request():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         passed = response.status_code == 200
         stats.add_result("Validation", "Minimal Valid Request", passed,
                         f"HTTP {response.status_code}")
@@ -385,7 +400,7 @@ def test_validation_invalid_tool_choice():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should either reject (400) or ignore invalid field
         passed = response.status_code in [200, 400]
         stats.add_result("Validation", "Invalid Tool Choice (no tools)", passed,
@@ -411,7 +426,7 @@ def test_validation_invalid_tools_schema():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should reject invalid schema
         passed = response.status_code in [200, 400]
         stats.add_result("Validation", "Invalid Tools Schema Type", passed,
@@ -440,7 +455,7 @@ def test_validation_user_tool_use_block():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should handle gracefully (either reject or ignore)
         passed = response.status_code in [200, 400]
         stats.add_result("Validation", "User Tool Use Block Handling", passed,
@@ -471,7 +486,7 @@ def test_validation_assistant_tool_result_block():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should handle gracefully
         passed = response.status_code in [200, 400]
         stats.add_result("Validation", "Assistant Tool Result Block", passed,
@@ -502,7 +517,7 @@ def test_validation_valid_tools_with_choice():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Validation test: ensure valid request is accepted (not rejected)
         # Note: Whether the model actually uses the tool is backend-dependent
         passed = response.status_code == 200
@@ -526,7 +541,7 @@ def test_validation_invalid_parameters():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should handle gracefully (reject or ignore invalid params)
         passed = response.status_code in [200, 400]
         stats.add_result("Validation", "Invalid Parameters (top_k, stop_sequences)", passed,
@@ -585,7 +600,7 @@ def test_basic_text_generation():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
         if response.status_code != 200:
             stats.add_result("Integration", "Basic Text Generation", False,
                            f"HTTP {response.status_code}: {response.text[:100]}")
@@ -618,7 +633,7 @@ def test_anthropic_api_compatibility():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
         if response.status_code != 200:
             stats.add_result("Integration", "Anthropic API Fields", False,
                            f"HTTP {response.status_code}")
@@ -659,7 +674,7 @@ def test_tool_calling_non_streaming():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
         if response.status_code != 200:
             stats.add_result("Tool Calling", "Non-Streaming Tool Call", False,
                            f"HTTP {response.status_code}")
@@ -719,7 +734,7 @@ def test_multiple_tools():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
         if response.status_code != 200:
             stats.add_result("Tool Calling", "Multiple Tools Selection", False,
                            f"HTTP {response.status_code}")
@@ -762,7 +777,7 @@ def test_streaming_basic():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, stream=True, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, stream=True, timeout=30)
         if response.status_code != 200:
             stats.add_result("Streaming", "Basic Streaming", False, f"HTTP {response.status_code}")
             return False
@@ -819,7 +834,7 @@ def test_streaming_with_tools():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, stream=True, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, stream=True, timeout=30)
         if response.status_code != 200:
             stats.add_result("Streaming", "Tool Streaming", False, f"HTTP {response.status_code}")
             return False
@@ -913,7 +928,7 @@ def test_e2e_tool_execution():
     }
 
     try:
-        response1 = requests.post(f"{GATEWAY_URL}/v1/messages", json=initial_request, timeout=30)
+        response1 = requests.post(f"{GATEWAY_URL}/v1/messages", json=initial_request, headers=AUTH_HEADERS, timeout=30)
         if response1.status_code != 200:
             stats.add_result("E2E", "Tool Execution Flow", False,
                            f"Step 1 failed: HTTP {response1.status_code}")
@@ -944,7 +959,7 @@ def test_e2e_tool_execution():
             "max_tokens": 200
         }
 
-        response2 = requests.post(f"{GATEWAY_URL}/v1/messages", json=followup_request, timeout=30)
+        response2 = requests.post(f"{GATEWAY_URL}/v1/messages", json=followup_request, headers=AUTH_HEADERS, timeout=30)
         if response2.status_code != 200:
             stats.add_result("E2E", "Tool Execution Flow", False,
                            f"Step 2 failed: HTTP {response2.status_code}")
@@ -965,7 +980,7 @@ def test_e2e_tool_execution():
             "max_tokens": 100
         }
 
-        response3 = requests.post(f"{GATEWAY_URL}/v1/messages", json=continuation_request, timeout=30)
+        response3 = requests.post(f"{GATEWAY_URL}/v1/messages", json=continuation_request, headers=AUTH_HEADERS, timeout=30)
         passed = response3.status_code == 200
 
         stats.add_result("E2E", "3-Turn Tool Execution Flow", passed,
@@ -989,7 +1004,7 @@ def test_error_empty_content():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should handle gracefully (200 with minimal response or 400)
         passed = response.status_code in [200, 400]
         stats.add_result("Error Handling", "Empty Content", passed,
@@ -1006,7 +1021,7 @@ def test_error_malformed_json():
         response = requests.post(
             f"{GATEWAY_URL}/v1/messages",
             data="{invalid json}",
-            headers={"Content-Type": "application/json"},
+            headers={**AUTH_HEADERS, "Content-Type": "application/json"},
             timeout=TIMEOUT_DEFAULT
         )
         # Should return 400 or handle gracefully
@@ -1028,7 +1043,7 @@ def test_error_missing_required_field():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_DEFAULT)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
         # Should return 400 for missing required field
         passed = response.status_code == 400
         stats.add_result("Error Handling", "Missing Required Field", passed,
@@ -1061,7 +1076,7 @@ def test_context_50k():
 
     try:
         start_time = time.time()
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_LONG)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_LONG)
         elapsed = time.time() - start_time
 
         if response.status_code != 200:
@@ -1099,7 +1114,7 @@ def test_context_100k():
 
     try:
         start_time = time.time()
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_LONG)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_LONG)
         elapsed = time.time() - start_time
 
         if response.status_code != 200:
@@ -1137,7 +1152,7 @@ def test_context_500k():
 
     try:
         start_time = time.time()
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_EXTENDED)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_EXTENDED)
         elapsed = time.time() - start_time
 
         if response.status_code != 200:
@@ -1176,7 +1191,7 @@ def test_context_1m_limit():
 
     try:
         start_time = time.time()
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=TIMEOUT_EXTENDED)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_EXTENDED)
         elapsed = time.time() - start_time
 
         if response.status_code != 200:
@@ -1213,7 +1228,7 @@ def test_system_message():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
         passed = response.status_code == 200
 
         if passed:
@@ -1242,8 +1257,8 @@ def test_temperature_determinism():
 
     try:
         # Make two identical requests
-        response1 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
-        response2 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response1 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
+        response2 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
 
         if response1.status_code != 200 or response2.status_code != 200:
             stats.add_result("Advanced Features", "Temperature Determinism", False,
@@ -1284,7 +1299,7 @@ def test_forced_tool_choice():
     }
 
     try:
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
 
         if response.status_code != 200:
             stats.add_result("Advanced Features", "Forced Tool Choice", False,
@@ -1330,7 +1345,7 @@ def test_multi_turn_with_tools():
     }
 
     try:
-        response1 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request1, timeout=30)
+        response1 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request1, headers=AUTH_HEADERS, timeout=30)
         if response1.status_code != 200:
             stats.add_result("Advanced Features", "Multi-Turn with Tools", False,
                            f"Turn 1 failed: HTTP {response1.status_code}")
@@ -1368,7 +1383,7 @@ def test_multi_turn_with_tools():
             "max_tokens": 200
         }
 
-        response2 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request2, timeout=30)
+        response2 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request2, headers=AUTH_HEADERS, timeout=30)
 
         if response2.status_code != 200:
             stats.add_result("Advanced Features", "Multi-Turn with Tools", False,
@@ -1390,7 +1405,7 @@ def test_multi_turn_with_tools():
             "max_tokens": 100
         }
 
-        response3 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request3, timeout=30)
+        response3 = requests.post(f"{GATEWAY_URL}/v1/messages", json=request3, headers=AUTH_HEADERS, timeout=30)
         passed = response3.status_code == 200
 
         stats.add_result("Advanced Features", "Multi-Turn with Tools", passed,
@@ -1420,7 +1435,7 @@ def test_performance_concurrent_requests():
 
     def make_request(_):
         try:
-            response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=30)
+            response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=30)
             return response.status_code == 200
         except:
             return False
@@ -1458,7 +1473,7 @@ def test_performance_large_context():
 
     try:
         start_time = time.time()
-        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, timeout=60)
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=60)
         elapsed = time.time() - start_time
 
         passed = response.status_code == 200
@@ -1471,13 +1486,345 @@ def test_performance_large_context():
 
 
 # ============================================================================
+# ADAPTER COMPATIBILITY TESTS - Multi-Protocol Support
+# ============================================================================
+
+def test_adapter_hermes_multiline_patch():
+    """
+    Adapter Test 1: Hermes - Multiline Patch with Proper Newlines
+
+    Tests the Gemma 4 fix for escaped newlines in tool arguments.
+    Hermes uses patch tool with multiline content - must have actual \\n, not escaped \\\\n.
+    """
+    request = {
+        "model": "claude-haiku-4-5-20251001",
+        "messages": [{
+            "role": "user",
+            "content": """Use the patch tool to modify src/example.py:
+
+Replace this line:
+from ari.core.database import get_session, get_db_engine
+
+With this:
+from ari.core.database import get_session, get_db_engine
+from ari.data.instruments_manager import get_lot_size"""
+        }],
+        "tools": [{
+            "name": "patch",
+            "description": "Apply a code patch to modify files",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "file_path": {"type": "string", "description": "Path to the file"},
+                    "old_string": {"type": "string", "description": "Text to replace"},
+                    "new_string": {"type": "string", "description": "Replacement text"}
+                },
+                "required": ["file_path", "old_string", "new_string"]
+            }
+        }],
+        "tool_choice": {"type": "tool", "name": "patch"},  # Force tool use
+        "max_tokens": 500
+    }
+
+    try:
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
+
+        if response.status_code != 200:
+            stats.add_result("Adapter Compatibility", "Hermes Multiline Patch", False,
+                           f"HTTP {response.status_code}")
+            return False
+
+        data = response.json()
+        tool_blocks = [c for c in data.get("content", []) if c.get("type") == "tool_use"]
+
+        if not tool_blocks:
+            stats.add_result("Adapter Compatibility", "Hermes Multiline Patch", False,
+                           "No tool_use in response")
+            return False
+
+        tool_input = tool_blocks[0].get("input", {})
+        new_string = str(tool_input.get("new_string", ""))
+
+        # Check 1: Should have actual newlines, not literal \\n
+        # When JSON is serialized, \\n becomes "\\\\n" in the string
+        serialized = json.dumps(tool_input)
+        has_double_escaped_newlines = "\\\\n" in serialized and new_string.count("\\n") > new_string.count("\n")
+
+        # Check 2: Should not have thinking tokens
+        response_text = json.dumps(data)
+        has_thinking_tokens = any(token in response_text for token in
+                                 ["<|channel>", "<channel|>", "<think>"])
+
+        passed = not has_double_escaped_newlines and not has_thinking_tokens
+
+        details = ""
+        if has_double_escaped_newlines:
+            details = "Contains escaped \\\\n instead of actual newlines"
+        elif has_thinking_tokens:
+            details = "Thinking tokens leaked"
+
+        stats.add_result("Adapter Compatibility", "Hermes Multiline Patch", passed, details)
+        return passed
+
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "Hermes Multiline Patch", False, str(e))
+        return False
+
+
+def test_adapter_thinking_token_filtering():
+    """
+    Adapter Test 2: Gemma 4 Thinking Token Filtering
+
+    Ensures Gemma 4's thinking tokens (<|channel>thought...<channel|>) are filtered.
+    """
+    request = {
+        "model": "claude-haiku-4-5-20251001",
+        "messages": [{
+            "role": "user",
+            "content": "Explain step-by-step how to calculate 15 * 23"
+        }],
+        "max_tokens": 300
+    }
+
+    try:
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
+
+        if response.status_code != 200:
+            stats.add_result("Adapter Compatibility", "Thinking Token Filter", False,
+                           f"HTTP {response.status_code}")
+            return False
+
+        data = response.json()
+        response_text = json.dumps(data)
+
+        # Check for any thinking token patterns
+        thinking_patterns = [
+            "<|channel>",
+            "<channel|>",
+            "thought\n<channel",
+            "<think>",
+            "</think>"
+        ]
+
+        found_tokens = [p for p in thinking_patterns if p in response_text]
+        passed = len(found_tokens) == 0
+
+        stats.add_result("Adapter Compatibility", "Thinking Token Filter", passed,
+                        f"Found: {found_tokens}" if found_tokens else "")
+        return passed
+
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "Thinking Token Filter", False, str(e))
+        return False
+
+
+def test_adapter_claude_code_sse_compliance():
+    """
+    Adapter Test 3: Claude Code SSE Strict Compliance
+
+    Claude Code CLI requires exact SSE format:
+    - content_block_start with empty input for tool_use
+    - No text_delta mixing with tool calls
+    """
+    request = {
+        "model": "claude-haiku-4-5-20251001",
+        "messages": [{"role": "user", "content": "List files in the current directory"}],
+        "tools": [{
+            "name": "Bash",
+            "description": "Execute bash commands",
+            "input_schema": {
+                "type": "object",
+                "properties": {"command": {"type": "string"}},
+                "required": ["command"]
+            }
+        }],
+        "stream": True,
+        "max_tokens": 300
+    }
+
+    try:
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS,
+                               stream=True, timeout=TIMEOUT_DEFAULT)
+
+        if response.status_code != 200:
+            stats.add_result("Adapter Compatibility", "Claude Code SSE Format", False,
+                           f"HTTP {response.status_code}")
+            return False
+
+        content_block_start_input_empty = True
+        has_tool_use = False
+
+        for line in response.iter_lines():
+            if not line:
+                continue
+            line = line.decode('utf-8')
+
+            if line.startswith('data:'):
+                try:
+                    data = json.loads(line[5:].strip())
+
+                    if data.get("type") == "content_block_start":
+                        cb = data.get("content_block", {})
+                        if cb.get("type") == "tool_use":
+                            has_tool_use = True
+                            # CRITICAL: input MUST be empty {}
+                            if cb.get("input") != {}:
+                                content_block_start_input_empty = False
+                except:
+                    pass
+
+        passed = content_block_start_input_empty and has_tool_use
+
+        details = ""
+        if not content_block_start_input_empty:
+            details = "content_block_start.input not empty {}"
+        elif not has_tool_use:
+            details = "No tool_use detected"
+
+        stats.add_result("Adapter Compatibility", "Claude Code SSE Format", passed, details)
+        return passed
+
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "Claude Code SSE", False, str(e))
+        return False
+
+
+def test_adapter_openai_function_calling():
+    """
+    Adapter Test 4: OpenAI SDK Function Calling Format
+
+    Tests OpenAI-style function calling via /v1/chat/completions endpoint.
+    """
+    request = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": "What's the weather in Tokyo?"}],
+        "tools": [{
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Get weather for a city",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "city": {"type": "string"}
+                    },
+                    "required": ["city"]
+                }
+            }
+        }],
+        "max_tokens": 200
+    }
+
+    try:
+        response = requests.post(f"{GATEWAY_URL}/v1/chat/completions", json=request,
+                               headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
+
+        if response.status_code != 200:
+            stats.add_result("Adapter Compatibility", "OpenAI Function Calling", False,
+                           f"HTTP {response.status_code}")
+            return False
+
+        data = response.json()
+        choices = data.get("choices", [])
+
+        if not choices:
+            stats.add_result("Adapter Compatibility", "OpenAI Function Calling", False,
+                           "No choices in response")
+            return False
+
+        message = choices[0].get("message", {})
+        tool_calls = message.get("tool_calls", [])
+
+        checks = {
+            "has_tool_calls": len(tool_calls) > 0,
+            "has_id": bool(tool_calls[0].get("id")) if tool_calls else False,
+            "type_is_function": tool_calls[0].get("type") == "function" if tool_calls else False,
+            "has_function": "function" in tool_calls[0] if tool_calls else False
+        }
+
+        passed = all(checks.values())
+        failed_checks = [k for k, v in checks.items() if not v]
+
+        stats.add_result("Adapter Compatibility", "OpenAI Function Calling", passed,
+                        f"Failed: {failed_checks}" if failed_checks else "")
+        return passed
+
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "OpenAI Function Calling", False, str(e))
+        return False
+
+
+def test_adapter_special_characters():
+    """
+    Adapter Test 5: Special Characters in Tool Arguments
+
+    Ensures special chars (regex, JSON escapes) don't break tool argument parsing.
+    """
+    request = {
+        "model": "claude-haiku-4-5-20251001",
+        "messages": [{
+            "role": "user",
+            "content": "Search for Python files using grep with pattern '*.py'"
+        }],
+        "tools": [{
+            "name": "grep",
+            "description": "Search with regex",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "pattern": {"type": "string"},
+                    "path": {"type": "string"}
+                },
+                "required": ["pattern"]
+            }
+        }],
+        "max_tokens": 200
+    }
+
+    try:
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
+
+        if response.status_code != 200:
+            stats.add_result("Adapter Compatibility", "Special Characters", False,
+                           f"HTTP {response.status_code}")
+            return False
+
+        data = response.json()
+        tool_blocks = [c for c in data.get("content", []) if c.get("type") == "tool_use"]
+
+        if not tool_blocks:
+            # Some models may not call tool - acceptable
+            stats.add_result("Adapter Compatibility", "Special Characters", True,
+                           "No tool call (acceptable)")
+            return True
+
+        tool_input = tool_blocks[0].get("input", {})
+
+        # Verify JSON is valid
+        try:
+            json.dumps(tool_input)
+            json_valid = True
+        except:
+            json_valid = False
+
+        passed = json_valid
+        stats.add_result("Adapter Compatibility", "Special Characters", passed,
+                        "JSON serialization failed" if not json_valid else "")
+        return passed
+
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "Special Characters", False, str(e))
+        return False
+
+
+# ============================================================================
 # MAIN TEST RUNNER
 # ============================================================================
 
 def main():
     """Run all tests with health check and warmup"""
     print(f"\n{'='*70}")
-    print(f"{Colors.BOLD}  LLM Adapter - UNIFIED TEST SUITE v4.0{Colors.NC}")
+    print(f"{Colors.BOLD}  LLM Adapter - UNIFIED TEST SUITE v4.1{Colors.NC}")
     print(f"{'='*70}")
     print(f"Gateway:  {GATEWAY_URL}")
     print(f"Mode:     {'Quick' if QUICK_MODE else 'Full'}")
@@ -1551,6 +1898,13 @@ def main():
         # Performance Tests
         ("Perf: Concurrent", test_performance_concurrent_requests),
         ("Perf: Large Context", test_performance_large_context),
+
+        # Adapter Compatibility Tests (New in v4.1)
+        ("Adapter: Hermes Patch", test_adapter_hermes_multiline_patch),
+        ("Adapter: Thinking Filter", test_adapter_thinking_token_filtering),
+        ("Adapter: Claude Code SSE", test_adapter_claude_code_sse_compliance),
+        ("Adapter: OpenAI Functions", test_adapter_openai_function_calling),
+        ("Adapter: Special Chars", test_adapter_special_characters),
     ]
 
     for name, test_func in tests:

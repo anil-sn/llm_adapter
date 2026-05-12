@@ -1,0 +1,129 @@
+# LLM Orchestrator - Gemma 4 31B Configuration (512K CONTEXT)
+# AWQ 4-bit quantization + FP8 KV cache
+# 512K token context (2× native 256K)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "cyankiwi/gemma-4-31B-it-AWQ-4bit"
+  served_model_name: "gemma-4-31b"
+  tokenizer_mode: "auto"
+  trust_remote_code: true          # Required for Gemma 4
+
+# ============================================================================
+# QUANTIZATION STRATEGY
+# ============================================================================
+# Model Weights: AWQ 4-bit (auto-detected from model config)
+# KV Cache: FP8 (specified below - critical for 512K context memory efficiency)
+# Combined: ~75% weight reduction + ~50% KV cache reduction vs FP16
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                    # AWQ supports FP16 and BF16
+  gpu_memory_utilization: 0.89     # Recommended production value for 512K context
+  tensor_parallel_size: 4          # Use all 4 GPUs
+  attention_backend: "TRITON_ATTN" # Required for fp8 kv_cache (FLASH_ATTN doesn't support fp8)
+
+  # AWQ quantization works on Ada (SM 8.9) - FP8 KV cache supported!
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Extended context window - 512K tokens (2× native 256K via YaRN)
+  max_model_len: 524288            # 512K tokens
+
+  # YaRN RoPE Scaling for 512K context
+  rope_scaling:
+    type: "yarn"
+    factor: 2.0                    # 2× scaling from 256K native
+    original_max_position_embeddings: 262144
+
+  # Memory-efficient features (CRITICAL for 512K)
+  enable_prefix_caching: true      # Reuses KV cache for repeated prefixes
+  enable_chunked_prefill: true     # Processes long prompts in chunks
+
+  # Batch settings - Optimized for 512K context (31B dense, 60 layers)
+  max_num_batched_tokens: 16384    # Conservative for memory
+  max_num_seqs: 2                  # 2 concurrent requests
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency
+
+  # Tool calling
+  enable_auto_tool_choice: true    # Enable automatic tool choice
+  tool_call_parser: "gemma4"       # Gemma 4 native function calling parser
+
+  # Output settings (conservative for 512K context)
+  default_max_tokens: 16384        # Default output length
+  max_output_tokens: 65536         # Max output for 512K context (64K)
+
+# ============================================================================
+# MEMORY BUDGET ESTIMATE - 512K CONTEXT
+# ============================================================================
+#
+# Hardware: 4× RTX 6000 Ada (49GB each) = 196GB total
+#
+# Model Weights (AWQ 4-bit):
+#   - Gemma 4 31B quantized: ~18-20GB across 4 GPUs (~5-6GB per GPU)
+#
+# KV Cache (512K context, FP8, 2 sequences):
+#   - Per sequence (512K tokens, FP8): ~60-70GB
+#   - With max_num_seqs=2: ~120-140GB total
+#   - BUT: With chunked prefill and prefix caching, actual usage is lower
+#   - Practical usage with 2 seqs: ~70-100GB
+#   - Distributed across 4 GPUs: ~18-25GB per GPU
+#
+# Total Memory Usage (512K context, 2 sequences):
+#   - Model weights: ~20GB
+#   - KV cache (512K tokens, 2 seqs): ~70-100GB
+#   - Activations & overhead: ~15-25GB
+#   - Total: ~105-145GB
+#   - Headroom: ~51-91GB (26-46% free)
+#
+# CONCLUSION: 512K context is FEASIBLE with 31B model:
+#   - AWQ 4-bit keeps weights small (~5-6GB per GPU)
+#   - Can support 2 concurrent requests
+#   - FP8 KV cache is critical for memory efficiency
+#   - More headroom than Qwen 1M config
+#
+# PROGRESSIVE TESTING PLAN:
+# - Start with 128K (native), test stability
+# - Scale to 256K (native max), verify quality
+# - Scale to 384K, monitor memory with 2 concurrent requests
+# - Finally attempt 512K if stable
+#
+# ============================================================================
+# DEPLOYMENT NOTES - 512K CONTEXT
+# ============================================================================
+#
+# ✅ AWQ quantization: Compatible with Ada (SM 8.9)
+# ✅ FP8 KV cache: Supported on Ada GPUs
+# ✅ Standard CUDA kernels work on Ada architecture
+# ✅ Excellent memory efficiency with 4-bit weights + FP8 KV cache
+# ✅ 31B model allows 2 concurrent requests with comfortable headroom
+#
+# ⚠️ CONTEXT LIMITATIONS:
+#   - Gemma 4 31B native context: 256K tokens
+#   - 512K is 2× native — no documented RoPE scaling beyond 256K
+#   - Quality may degrade beyond native context
+#   - Test thoroughly at each scale step
+#
+# ⚠️ GEMMA 4 SPECIFICS:
+#   - Hybrid attention: sliding window (1024 tokens) + global attention layers
+#   - Proportional RoPE (p-RoPE) for long contexts
+#   - Unified Keys and Values in global layers for memory optimization
+#   - Thinking mode: trigger with <|think|> token in system prompt
+#   - Multimodal: text + image (vision encoder ~550M params)
+#
+# 🔧 TUNING OPTIONS:
+#   - If OOM with 2 seqs: Set max_num_seqs=1
+#   - If OOM: Reduce to 256K (native) or 384K
+#   - If stable with headroom: Can try max_num_seqs=3
+#   - Monitor: watch -n 1 nvidia-smi
+#
+# ============================================================================

@@ -31,6 +31,21 @@ class ClaudeAdapter(OpenAIAdapter):
         self.message_id = f"msg_{uuid.uuid4().hex}"
         self.estimated_input_tokens = 0
 
+    def _fix_escaped_newlines(self, obj):
+        """
+        Fix Gemma 4 tool calling issue: recursively unescape literal \\n in string values.
+        Gemma 4 sometimes outputs JSON with escaped newlines that should be actual newlines.
+        """
+        if isinstance(obj, dict):
+            return {k: self._fix_escaped_newlines(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._fix_escaped_newlines(item) for item in obj]
+        elif isinstance(obj, str):
+            # Replace literal \n with actual newlines
+            # Also handle \t, \r, and other common escapes
+            return obj.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
+        return obj
+
     def is_prefill(self, content: str) -> bool:
         prefill_tokens = ['{', '[', '```', '{"', '[{', '<']
         trimmed = str(content).strip()
@@ -299,6 +314,12 @@ class ClaudeAdapter(OpenAIAdapter):
                     # Also handle unclosed </think> tags
                     content = re.sub(r'</think>\s*', '', content)
 
+                    # Remove Gemma 4 thinking tokens: <|channel>thought...<channel|>
+                    content = re.sub(r'<\|channel>thought.*?<channel\|>\s*', '', content, flags=re.DOTALL)
+                    # Handle partial/unclosed tags
+                    content = re.sub(r'<\|channel>thought.*?$', '', content, flags=re.DOTALL)
+                    content = re.sub(r'<channel\|>\s*', '', content)
+
                     # Remove reasoning patterns (aggressive filtering for Nemotron-3)
                     # Pattern 1: "User asks/said..." at start
                     content = re.sub(r'^(The user (asks?|said?|wants?|requests?)|User (asks?|said?)):.*?\n\n', '', content, flags=re.DOTALL)
@@ -332,8 +353,14 @@ class ClaudeAdapter(OpenAIAdapter):
                 # Add tool_use blocks
                 tool_calls = m.get("tool_calls", [])
                 for tc in tool_calls:
-                    try: args = json.loads(tc["function"]["arguments"])
-                    except: args = {}
+                    try:
+                        args_str = tc["function"]["arguments"]
+                        # Fix Gemma 4 issue: unescape literal \n in string values
+                        args = json.loads(args_str)
+                        # Recursively fix escaped newlines in all string values
+                        args = self._fix_escaped_newlines(args)
+                    except:
+                        args = {}
                     content.append({"type": "tool_use", "id": tc["id"], "name": tc["function"]["name"], "input": args})
 
                 # Add text content ONLY if no tools are present
@@ -473,10 +500,16 @@ class ClaudeAdapter(OpenAIAdapter):
 
                     text = delta.get("content", "")
                     if text:
-                        # CRITICAL FIX: Properly handle <think>...</think> blocks
+                        # CRITICAL FIX: Properly handle <think>...</think> blocks and Gemma 4 thinking tokens
                         # For Qwen models that wrap reasoning in think tags before tool calls,
                         # we need to skip ALL content inside these blocks (not just the tags)
                         if not self.thinking_requested:
+                            # Remove Gemma 4 thinking tokens
+                            import re
+                            text = re.sub(r'<\|channel>thought.*?<channel\|>', '', text, flags=re.DOTALL)
+                            text = re.sub(r'<\|channel>thought.*?$', '', text, flags=re.DOTALL)
+                            text = re.sub(r'<channel\|>', '', text)
+
                             # Track state across chunks
                             if "<think>" in text:
                                 in_think_block = True
@@ -552,6 +585,15 @@ class ClaudeAdapter(OpenAIAdapter):
                     # Claude Code CLI expects this incremental format
                     args_str = function.get("arguments", "")
                     if args_str:
+                        # Fix Gemma 4 escaped newlines in the JSON string
+                        try:
+                            # Parse and re-serialize to fix escapes
+                            args_obj = json.loads(args_str)
+                            args_obj = self._fix_escaped_newlines(args_obj)
+                            args_str = json.dumps(args_obj)
+                        except:
+                            pass  # If parsing fails, send as-is
+
                         yield sse("content_block_delta", {
                             "type": "content_block_delta",
                             "index": idx,
