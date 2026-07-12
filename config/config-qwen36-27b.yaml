@@ -7,8 +7,9 @@
 # MODEL IDENTITY
 # ============================================================================
 model:
+  chat_template: "config/qwen_fixed.jinja"
   id: "cyankiwi/Qwen3.6-27B-AWQ-INT4"
-  served_model_name: "qwen-3.6-27b"
+  served_model_name: "mystery-ai"  # Abstracted - hides model identity
   tokenizer_mode: "auto"
   trust_remote_code: true          # Required for Qwen
 
@@ -63,6 +64,20 @@ inference:
   # Output settings (conservative for 1M context)
   default_max_tokens: 16384        # Default output length
   max_output_tokens: 65536         # Max output for 1M context (64K)
+
+  # ============================================================================
+  # MTP SPECULATIVE DECODING - 1.5-2.5× SPEEDUP
+  # ============================================================================
+  # Native Multi-Token Prediction - Built into Qwen3.6-27B
+  # - No separate draft model required (MTP heads built into base model)
+  # - Speculates 2 tokens ahead natively (optimal for Qwen3.6)
+  # - 1.5-2.5× faster generation with 70-85% acceptance rate
+  # - Zero additional memory overhead (MTP heads already in model)
+  # - Better latency at low concurrency vs ngram (1.4-1.8×)
+  # ============================================================================
+  speculative_decoding:
+    method: "qwen3_next_mtp"       # Qwen3.6 native MTP method
+    num_speculative_tokens: 2      # Optimal for Qwen3.6 (1-5 range supported)
 
 # ============================================================================
 # MEMORY BUDGET ESTIMATE - 1M CONTEXT

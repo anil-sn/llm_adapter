@@ -1,0 +1,69 @@
+# LLM Orchestrator - Qwen3.5-122B-A10B FP8 Configuration
+# Model: Qwen/Qwen3.5-122B-A10B-FP8
+# Quantization: FP8 (weights & activations) + FP8 KV Cache (Native Ada Lovelace Acceleration)
+# Architecture: Hybrid Gated DeltaNet + Sparse MoE (122B params, 10B active)
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "Qwen/Qwen3.5-122B-A10B-FP8"
+  served_model_name: "oracle-122b-moe"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "fp8"
+  engine_preference: "v0"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.92      # Highly optimized but safe (0.5 to 0.95 range)
+  tensor_parallel_size: 4           # Must match 4× RTX 6000 Ada GPUs
+  attention_backend: "FLASHINFER"   # FlashInfer supports native FP8 KV cache math
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Native context window size
+  max_model_len: 262144
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"             # Native FP8 KV Cache for massive memory efficiency
+
+  # MoE Settings
+  enable_expert_parallel: true      # Essential for sparse MoE routing across GPUs
+  moe_backend: "auto"
+
+  # Prefill optimization
+  enable_chunked_prefill: true
+  enable_prefix_caching: true       # Reuses KV cache for repeated prompts (excellent for agent loops)
+  max_num_batched_tokens: 16384     # Safe batch size balancing memory and throughput
+  max_num_seqs: 4                   # Higher concurrency for multi-user/agent setups
+
+  # Reasoning and tool calling parsers
+  reasoning_parser: "qwen3"         # Standard Qwen3 reasoning parser
+  tool_call_parser: "qwen3_coder"   # Qwen3 tool calling format
+
+  # Output settings
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_USE_V1: "0"                 # Disable V1 for stable engine execution on Ada Lovelace
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual memory fragmentation
+    NCCL_P2P_DISABLE: "1"           # CRITICAL: Prevents driver deadlocks on non-NVLink PCIe topologies
+    NCCL_IB_DISABLE: "1"            # Disable InfiniBand explicitly
+    NCCL_SHM_DISABLE: "0"           # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1" # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"

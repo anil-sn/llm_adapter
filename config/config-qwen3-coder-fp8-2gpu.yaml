@@ -1,0 +1,70 @@
+# LLM Orchestrator - Qwen3-Coder-Next FP8 2-GPU Configuration (Snappy 256K Context)
+# Model: Qwen/Qwen3-Coder-Next-FP8 (80B MoE, 3B Active, mid-2026 flagship)
+# Quantization: FP8 (Native high-performance FP8 with SwiGLU clamp on Ada)
+# Hardware: 2× RTX 6000 Ada (GPUs 0,1 strictly isolated, GPUs 2,3 left idle)
+# Topology: PCIe topology, no NVLink
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "Qwen/Qwen3-Coder-Next-FP8"
+  served_model_name: "qwen3-coder-fp8"
+  tokenizer_mode: "auto"
+  # chat_template: auto (uses model's built-in template from tokenizer_config.json)
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (Strictly uses GPU 0,1 only)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1"]                   # Only visible to GPU 0 and GPU 1
+  core_ranges: ["0-55"]                 # Restrict to first 56 CPU threads
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.94          # High utilization to maximize KV cache headroom on 2 GPUs
+  tensor_parallel_size: 2               # TP=2 (split across 2 GPUs)
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings (balanced for speed vs capacity)
+  max_model_len: 262144                 # 256K context (native model length, 3-4x faster than 900K)
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"                 # Native FP8 KV Cache (critical for memory safety)
+
+  # Prefill optimization (faster for typical coding prompts)
+  enable_chunked_prefill: false         # Disabled for faster prefill on normal prompts
+  max_num_batched_tokens: 16384         # Larger chunks for faster prefill
+  max_num_seqs: 1                       # Lock concurrency to 1 to guarantee absolute real-time speed and stability
+
+  # Speculative decoding (2-3x faster generation via n-gram prediction)
+  speculative_decoding:
+    method: "ngram"
+    num_speculative_tokens: 5
+    ngram_prompt_lookup_max: 4
+    ngram_prompt_lookup_min: 1
+
+  # No RoPE scaling needed - using native 256K context window
+  # (RoPE scaling removed for maximum speed at native context length)
+
+  # Tool calling and reasoning
+  enable_thinking: false                # Qwen3-Coder-Next operates in high-speed, non-thinking mode
+  enable_auto_tool_choice: true         # Enable tool calling
+  tool_call_parser: "qwen3_xml"         # Use XML parser (native format Qwen3 was trained on)
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Aggressively combat PyTorch memory fragmentation
+    NCCL_P2P_DISABLE: "1"                             # CRITICAL: Disable NCCL P2P to prevent deadlocks on PCIe-only systems
+    VLLM_FP8_ACTIVATION: "1"                          # Force native FP8 execution for maximum throughput

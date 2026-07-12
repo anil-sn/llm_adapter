@@ -1,0 +1,58 @@
+# LLM Orchestrator - Qwen3.6-72B Instruct AWQ (512K Context via YaRN)
+# Model: Qwen/Qwen3.6-72B-Instruct-AWQ (72B Dense, mid-2026 flagship)
+# Quantization: AWQ 4-bit (Native GPU hardware decompression)
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "Qwen/Qwen3.6-72B-Instruct-AWQ"
+  served_model_name: "qwen3.6-72b"
+  tokenizer_mode: "auto"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.90          # Safely captures weight + KV Cache allocations
+  tensor_parallel_size: 4               # 4x RTX 6000 Ada
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings (Scaled to 0.5M via YaRN RoPE)
+  max_model_len: 524288                 # Scaled Context Length (0.5M tokens)
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"                 # Native FP8 KV Cache (critical for memory safety)
+
+  # Prefill optimization (prevents CUDA timeouts during massive prompt evaluations)
+  enable_chunked_prefill: true          # Split massive prompts to prevent CUDA driver timeouts
+  max_num_batched_tokens: 8192          # Smooth prefill chunks
+  max_num_seqs: 2                       # Limit concurrent requests to 2 to enforce VRAM bounds
+
+  # YaRN RoPE Scaling overrides (extends native 256K context to 512K context)
+  hf_overrides:
+    rope_parameters:
+      rope_type: "yarn"
+      factor: 2.0                       # 2x scaling (256K native -> 512K context)
+      original_max_position_embeddings: 262144
+      rope_theta: 1000000.0             # Prevent positional embedding frequency decay
+
+  # Tool calling and reasoning
+  enable_thinking: true
+  reasoning_parser: "qwen3"             # Natively extract <thought> tags
+  tool_call_parser: "qwen3_coder"
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"              # Highly optimized FP8 backend (fully compiled on PyTorch 2.12 + SM8.9)
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Aggressively combat PyTorch memory fragmentation
+    NCCL_P2P_DISABLE: "1"                             # CRITICAL: Disable NCCL P2P to prevent deadlocks on PCIe-only systems

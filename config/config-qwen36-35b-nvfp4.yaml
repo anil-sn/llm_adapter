@@ -1,0 +1,70 @@
+# LLM Orchestrator - Qwen3.6-35B-A3B NVFP4 Configuration (1M CONTEXT)
+# ModelOpt FP4 Quantization + FP8 KV cache + FlashInfer Cutlass MoE
+# 1M token context via YaRN 4× RoPE scaling
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "nvidia/Qwen3.6-35B-A3B-NVFP4"
+  served_model_name: "oracle-v3-moe"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.95      # Squeezed to 95% VRAM (45.6GB per GPU)
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "TRITON_ATTN" # Required for FP8 KV cache on Ada Lovelace
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Extended context window - 1M tokens with YaRN RoPE scaling
+  max_model_len: 1048576           # 1M tokens (~4x native 256K context)
+
+  # YaRN RoPE Scaling for 1M context from 256K native
+  rope_scaling:
+    rope_type: "yarn"              # YaRN scaling method (vLLM format)
+    factor: 4.0                    # 4× scaling from 256K native
+    original_max_position_embeddings: 262144
+
+  # Memory-efficient features (CRITICAL for 1M)
+  enable_prefix_caching: true      # Reuses KV cache for repeated prefixes
+  enable_chunked_prefill: true     # Processes long prompts in chunks
+
+  # Batch settings - Squeezed for maximum hardware throughput
+  max_num_batched_tokens: 32768    # Aggressive prefill chunking (blazing fast linear layers)
+  max_num_seqs: 8                  # MAXIMIZED: 8 concurrent 1M-context MoE streams (only 2.5GB KV cache per GPU each)
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency (critical for 1M)
+
+  # MoE optimization
+  enable_expert_parallel: true     # Enable EP for MoE
+  moe_backend: "flashinfer_cutlass" # Supported in v0.24.0 for non-Blackwell SM 8.9 NVFP4 MoE
+
+  # Reasoning settings
+  reasoning_parser: "qwen3"        # Qwen3 built-in parser
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # Qwen's tool calling parser
+
+  # Output settings (conservative for 1M context)
+  default_max_tokens: 16384        # Default output length
+  max_output_tokens: 65536         # Max output for 1M context (64K)
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"
+    VLLM_USE_FLASHINFER_MOE_FP4: "1" # Force FlashInfer MoE FP4 kernel
+    VLLM_USE_V1: "0"

@@ -1,0 +1,80 @@
+# LLM Orchestrator - Qwen3-235B MoE AWQ Configuration (512K Context)
+# Model: QuantTrio/Qwen3-235B-A22B-Instruct-2507-AWQ (235B total, 22B active per token)
+# Quantization: AWQ 4-bit + FP8 KV Cache
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "QuantTrio/Qwen3-235B-A22B-Instruct-2507-AWQ"
+  served_model_name: "llm-235b-moe"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+
+# ============================================================================
+# REPLICA RUNNER & AFFINITY
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1,2,3"]               # Use all 4 GPUs for a single robust replica
+  core_ranges: ["0-55"]                 # Optimized: Map strictly to Xeon physical cores (0-55) to prevent SMT contention
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.90          # Safe allocation boundary for 116GB model + 256K active KV caches
+  tensor_parallel_size: 4               # Sharded across all 4 GPUs
+  attention_backend: "TRITON_ATTN"       # TRITON_ATTN required for fp8 kv_cache
+
+# ============================================================================
+# INFERENCE OVERRIDES (MoE-Optimized for Native 256K Context)
+# ============================================================================
+inference:
+  # Context settings
+  max_model_len: 262144                 # Native 256K context length (saves ~3.55GB VRAM/GPU, completely avoiding Triton deadlocks)
+  
+  # YaRN RoPE Scaling (Disabled: using native context size)
+  # rope_scaling:
+  #   type: "yarn"
+  #   rope_type: "yarn"
+  #   factor: 1.0
+  #   original_max_position_embeddings: 262144
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"                 # FP8 KV Cache (absolutely mandatory for memory footprint)
+
+  # Prefill optimization (Crucial for context prefill)
+  enable_chunked_prefill: true          # Split massive prompts into chunks to prevent GPU timeouts
+  max_num_batched_tokens: 8192          # Smooth prefill chunking size
+  max_num_seqs: 4                       # Up to 4 concurrent sequences with 256K context
+
+  # Prefix Caching
+  enable_prefix_caching: false          # Disabled for absolute architectural consistency with other Qwen3 MoE configurations
+
+  # Tool calling and reasoning
+  enable_thinking: false                # Non-thinking mode model (does not emit `<think>` tags)
+  enable_auto_tool_choice: true         # Support autonomous tool calling
+  tool_call_parser: "hermes"            # Use Hermes XML tool call parser
+  reasoning_parser: "qwen3"             # Fallback reasoning structure extraction
+
+  # Output limits
+  default_max_tokens: 4096              # Default max output (prevent accidental long runaway generations)
+  max_output_tokens: 32768              # Maximum allowable output tokens (ceiling)
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"                # Highly optimized FP8 backend on Ada GPUs (SM 8.9)
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual VRAM memory fragmentation
+    NCCL_P2P_DISABLE: "1"                               # CRITICAL: Prevents driver deadlocks on non-NVLink PCIe systems
+    NCCL_IB_DISABLE: "1"                                # Disable InfiniBand explicitly (no IB fabric present)
+    NCCL_SHM_DISABLE: "0"                               # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"                    # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    VLLM_LOGGING_LEVEL: "CRITICAL"

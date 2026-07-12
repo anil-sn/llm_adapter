@@ -1,0 +1,88 @@
+# LLM Orchestrator - Qwen3.6-35B-A3B MoE (AWQ 4-bit)
+# MoE architecture with 35B total params, 3B active per token
+# AWQ 4-bit quantization + MTP speculation
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit"
+  served_model_name: "mystery-ai"  # Abstracted - hides model identity  # Abstracted name - hides model identity
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.90     # Higher for 1M context
+  tensor_parallel_size: 4          # All 4 GPUs
+  attention_backend: "TRITON_ATTN" # Required for FP8 KV cache
+  disable_custom_all_reduce: true
+
+# ============================================================================
+# INFERENCE SETTINGS - OPTIMIZED FOR MOE
+# ============================================================================
+inference:
+  # Extended context - 1M tokens with YaRN RoPE scaling
+  max_model_len: 1048576           # 1M tokens (~8× native with YaRN)
+
+  # YaRN RoPE Scaling for 1M context
+  rope_scaling:
+    type: "yarn"
+    factor: 8.0                    # 8× scaling from 128K native
+    original_max_position_embeddings: 131072
+
+  # NO prefix caching for MTP
+  enable_prefix_caching: false
+  enable_chunked_prefill: true
+
+  # MoE-optimized batch settings for 1M context
+  max_num_batched_tokens: 16384    # Conservative for 1M
+  max_num_seqs: 2                  # Reduced for 1M context
+
+  # KV cache - FP8 for 1M context memory efficiency
+  kv_cache_dtype: "fp8"            # Critical for 1M context
+
+  # Reasoning and tool calling
+  reasoning_parser: "qwen3"
+  tool_call_parser: "qwen3_coder"
+
+  # Output settings
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+
+  # ============================================================================
+  # MTP SPECULATIVE DECODING
+  # ============================================================================
+  # MoE models benefit MORE from MTP due to sparse activation
+  # Only 3B params active per token = faster speculation
+  # ============================================================================
+  speculative_decoding:
+    method: "qwen3_next_mtp"
+    num_speculative_tokens: 3
+
+# ============================================================================
+# PERFORMANCE EXPECTATIONS - MOE
+# ============================================================================
+#
+# MoE Advantages:
+# - Only 3B params active per token (vs 27B dense)
+# - Faster inference per token
+# - Better MTP acceptance (less computation per speculative token)
+# - Same 35B model quality, fraction of compute
+#
+# Expected Performance:
+# - Throughput: 80-120 tok/s (better than 27B dense due to sparsity)
+# - TTFT: 0.08-0.12s (faster than dense)
+# - MTP speedup: 2-2.5× (MoE + MTP synergy)
+#
+# Memory:
+# - AWQ 4-bit: ~20GB model weights
+# - KV cache (128K): ~15GB
+# - Total: ~35GB across 4 GPUs
+#
+# ============================================================================

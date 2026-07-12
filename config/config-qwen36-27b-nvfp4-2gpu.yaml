@@ -1,0 +1,71 @@
+# LLM Orchestrator - Qwen3.6-27B NVFP4 Configuration (2-GPU / 256K CONTEXT)
+# ModelOpt FP4 Quantization + FP8 KV cache
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "nvidia/Qwen3.6-27B-NVFP4"
+  served_model_name: "oracle-v3-dense"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "nvfp4"
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (Strictly uses GPU 0,1 only)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1"]                   # Only visible to GPU 0 and GPU 1
+  core_ranges: ["0-55"]                 # Restrict to first 56 CPU threads
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.92          # Balanced utilization
+  tensor_parallel_size: 2               # TP=2 (split across 2 GPUs)
+  attention_backend: "FLASHINFER"
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Context settings (balanced for speed vs capacity on 2 GPUs)
+  max_model_len: 262144                 # 256K context
+
+  # YaRN RoPE Scaling
+  rope_scaling:
+    rope_type: "yarn"
+    factor: 2.0
+    original_max_position_embeddings: 131072
+
+  # Memory-efficient features
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 2                       # 2 concurrent streams
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"
+
+  # Parsers
+  reasoning_parser: "qwen3"
+  tool_call_parser: "qwen3_coder"
+
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_USE_V1: "0"                    # Disable V1 for dense stability

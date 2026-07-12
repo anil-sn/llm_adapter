@@ -7,8 +7,9 @@
 # MODEL IDENTITY
 # ============================================================================
 model:
+  chat_template: "config/qwen_fixed.jinja"
   id: "cyankiwi/Qwen3.6-35B-A3B-AWQ-4bit"
-  served_model_name: "qwen-3.6-35b"
+  served_model_name: "mystery-ai"  # Abstracted - hides model identity
   tokenizer_mode: "auto"
   trust_remote_code: true          # Required for Qwen
 
