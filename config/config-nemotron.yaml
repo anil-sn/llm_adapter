@@ -8,7 +8,7 @@
 # ============================================================================
 model:
   id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8"
-  served_model_name: "nemotron-3-super"
+  served_model_name: "mystery-ai"  # Abstracted - hides model identity
   tokenizer_mode: "auto"
 
 # ============================================================================
@@ -16,7 +16,7 @@ model:
 # ============================================================================
 hardware:
   gpu_memory_utilization: 0.85     # Tested stable at 85%
-  attention_backend: "TRITON_ATTN" # Explicit backend for consistency
+  # attention_backend: auto          # Let vLLM choose (commented out for v0.22.0)
 
 # ============================================================================
 # INFERENCE OVERRIDES
@@ -24,6 +24,9 @@ hardware:
 inference:
   # Context settings (TurboQuant 2-bit enables 256K on 196GB VRAM)
   max_model_len: 262144            # 256K context (4× KV cache efficiency vs FP8)
+
+  # KV cache dtype (must be explicit for vLLM 0.22.0)
+  kv_cache_dtype: "auto"           # auto = FP16/BF16 (FP8 model weights)
 
   # Batch settings
   max_num_batched_tokens: 16384    # Conservative for stability

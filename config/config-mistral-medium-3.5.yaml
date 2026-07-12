@@ -1,0 +1,178 @@
+# LLM Orchestrator - Mistral Medium 3.5 128B with EAGLE Speculative Decoding
+# AWQ 4-bit quantization + FP8 KV cache + EAGLE draft model
+# 256K native context (YaRN scaling to 384K)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "cyankiwi/Mistral-Medium-3.5-128B-AWQ-INT4"
+  served_model_name: "mystery-ai"  # Abstracted - hides model identity  # Simple name that routes to ClaudeAdapter
+  tokenizer_mode: "auto"
+  trust_remote_code: true          # Required for Mistral Medium 3.5
+
+# ============================================================================
+# QUANTIZATION STRATEGY
+# ============================================================================
+# Model Weights: AWQ 4-bit (auto-detected from model config)
+# KV Cache: FP8 (specified below - critical for 128B dense model memory efficiency)
+# Combined: ~75% weight reduction + ~50% KV cache reduction vs FP16
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "bfloat16"                # BF16 for AWQ compatibility
+  gpu_memory_utilization: 0.88     # Reduced from 0.90 for EAGLE draft model
+  tensor_parallel_size: 4          # Use all 4 GPUs
+  attention_backend: "TRITON_ATTN" # Required for fp8 kv_cache (FLASH_ATTN doesn't support fp8)
+  disable_custom_all_reduce: true  # Required for PCIe topology (non-NVLink)
+
+  # CUDA memory optimization to reduce fragmentation
+  env_vars:
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+  # AWQ quantization works on Ada (SM 8.9) - FP8 KV cache supported!
+
+# ============================================================================
+# DRAFT MODEL SPECULATIVE DECODING (2-2.5× SPEEDUP)
+# ============================================================================
+# Uses Mistral 7B to draft predictions, Mistral Medium 3.5 128B to verify
+# - Draft model: ~7-14GB memory overhead (depending on quantization)
+# - 2-2.5× speedup for most tasks (better than n-gram's 1.5-2×)
+# - Works immediately with compatible Mistral models
+#
+# FALLBACK: If draft model fails to load, vLLM auto-falls back to n-gram
+#
+# NOTE: EAGLE for Mistral Medium 3.5 NOT supported in vLLM 0.20.2
+# - EagleMistralForCausalLM is missing from supported architectures
+# - Only EagleMistralLarge3ForCausalLM is supported
+# - EAGLE will be available in future vLLM releases
+# ============================================================================
+speculative_decoding:
+  method: "ngram"                  # N-gram speculation (1.5-2× speedup, zero overhead)
+  num_speculative_tokens: 5        # 3-7 optimal for n-gram
+  # EAGLE requires vLLM nightly (not supported in 0.20.2)
+  # Model downloaded but architecture not recognized in stable vLLM
+
+# ============================================================================
+# TEXT-ONLY OPTIMIZATIONS
+# ============================================================================
+# ALL VISION/MULTIMODAL FEATURES DISABLED FOR MAXIMUM TEXT PERFORMANCE
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Extended context window - 384K tokens (1.5× native via YaRN)
+  # EAGLE supports full extended context (not limited to 64K)
+  max_model_len: 393216            # 384K tokens (262144 × 1.5)
+
+  # YaRN RoPE Scaling for 384K context (works with EAGLE)
+  rope_scaling:
+    type: "yarn"
+    factor: 1.5                    # 1.5× scaling from 256K native
+    original_max_position_embeddings: 262144
+
+  # Disable multimodal (Mistral Medium 3.5 is text-only, not Pixtral)
+  # CRITICAL: This frees ~22GB by preventing vision encoder from loading
+  limit_mm_per_prompt:
+    image: 0                       # Disable image processing to avoid OOM
+
+  # Memory-efficient features (CRITICAL for 384K + 128B dense + EAGLE)
+  enable_prefix_caching: true      # Reuses KV cache for repeated prefixes
+  enable_chunked_prefill: true     # Processes long prompts in chunks
+
+  # Batch settings - Optimized for 384K context with EAGLE speculation
+  # Base model: ~77 GB weights + ~66 GB KV cache (384K FP8) = 143 GB
+  # EAGLE overhead: ~15-20 GB (draft model + draft KV cache)
+  # Total: ~160-165 GB (fits in 196 GB with 31-36GB headroom)
+  max_num_batched_tokens: 32768    # Higher for long-context agentic workloads
+  max_num_seqs: 1                  # Single sequence for full 384K context usage
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency (CRITICAL)
+
+  # Tool calling - ENABLED with non-streaming workaround
+  # CRITICAL: Streaming tool calls trigger IndexError in vLLM 0.20.2 Mistral parser
+  # Gateway forces non-streaming when tools are present (same workaround as Gemma 4)
+  enable_auto_tool_choice: true
+  tool_call_parser: "mistral"
+
+  # Reasoning mode - ENABLED with native Mistral parser
+  # reasoning_effort is dynamically configurable per request (none/low/high)
+  # vLLM MistralReasoningParser handles reasoning token stripping
+  reasoning_parser: "mistral"
+
+  # Output settings
+  default_max_tokens: 16384        # Default output length
+  max_output_tokens: 65536         # Max output for 256K context (64K)
+
+# ============================================================================
+# PERFORMANCE EXPECTATIONS
+# ============================================================================
+#
+# BASELINE (without EAGLE):
+#   - Short sequences (1K in, 512 out): 34-36 tokens/sec
+#   - Medium sequences (2K in, 1K out): 33-35 tokens/sec
+#
+# WITH EAGLE SPECULATIVE DECODING:
+#   - Expected speedup: 2-3x
+#   - Target throughput: 70-100 tokens/sec
+#   - Best for: coding, reasoning, tool-use (predictable outputs)
+#   - Slightly higher TTFT: +10-20% (draft model overhead)
+#
+# MEMORY OVERHEAD:
+#   - EAGLE draft model: ~15-20 GB
+#   - Draft KV cache: ~5-10 GB (depending on context)
+#   - Total overhead: ~20-30 GB
+#   - Remaining capacity: 196 - 165 = ~31 GB headroom
+#
+# ============================================================================
+# DEPLOYMENT NOTES - EAGLE SPECULATIVE DECODING
+# ============================================================================
+#
+# ✅ EAGLE Benefits:
+#   - 2-3× faster generation for typical workloads
+#   - Zero quality degradation (exact same outputs)
+#   - Official Mistral draft model (mistralai/Mistral-Medium-3.5-128B-EAGLE)
+#   - Native vLLM support (method='eagle')
+#
+# ⚠️ EAGLE Trade-offs:
+#   - Extra memory: ~20-30 GB for draft model + draft KV cache
+#   - Slightly higher TTFT: +10-20% (draft model overhead)
+#   - Context reduced from 512K to 384K to fit memory budget
+#
+# ⚠️ CRITICAL:
+#   - GPU memory utilization reduced to 0.88 (from 0.90) for EAGLE overhead
+#   - max_model_len reduced to 384K (from 512K) to accommodate draft model
+#   - FP8 KV cache is NON-NEGOTIABLE for both base and draft models
+#   - draft_tensor_parallel_size must match base model TP size (4)
+#
+# 🎯 WHEN TO USE EAGLE:
+#   - Coding tasks (highly predictable completions)
+#   - Reasoning with extended thinking (structured outputs)
+#   - Tool-use and function calling (deterministic patterns)
+#   - Agentic workflows (repetitive action sequences)
+#
+# 🎯 WHEN NOT TO USE EAGLE:
+#   - Highly creative writing (unpredictable outputs reduce speedup)
+#   - Very high temperature sampling (random outputs don't benefit)
+#   - Extremely long context (> 384K tokens - memory constraints)
+#
+# 🔧 TUNING OPTIONS:
+#   - num_speculative_tokens: 3-7 (5 is optimal for most workloads)
+#     - Higher = more speedup if predictions are accurate
+#     - Lower = less overhead if predictions are often wrong
+#   - For more context: reduce num_speculative_tokens to 3, increase max_model_len
+#   - For more speed: increase num_speculative_tokens to 7
+#   - Monitor acceptance rate in vLLM logs to tune
+#
+# 🔍 MONITORING:
+#   - Watch vLLM logs for "Speculative acceptance rate"
+#   - Good: > 60% acceptance rate (2x+ speedup)
+#   - Excellent: > 80% acceptance rate (2.5x+ speedup)
+#   - Poor: < 40% acceptance rate (< 1.5x speedup, consider disabling)
+#
+# ============================================================================

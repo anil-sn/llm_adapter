@@ -20,9 +20,11 @@ from pathlib import Path
 from typing import Union
 
 from .claude_adapter import ClaudeAdapter
+from .gemma_adapter import GemmaAdapter
 from .openai_adapter import OpenAIAdapter
 from .nemotron_adapter import NemotronAdapter
 from .qwen_adapter import QwenAdapter
+from .mistral_adapter import MistralAdapter
 
 from llm_adapter.utils.config_loader import load_config, ConfigError
 
@@ -34,12 +36,14 @@ logger = logging.getLogger("adapter-factory")
 try:
     config = load_config(project_root=PROJECT_ROOT, validate=False)  # Skip validation for speed
     RULES = config.get("model_rules", [])
-    MAX_CONTEXT = config.get("inference", {}).get("max_model_len", 32768)
+    MAX_CONTEXT = config.get("inference", {}).get("max_model_len", 900000)
 
     # Extract adapter-specific settings
     QWEN_ADAPTER_CONFIG = config.get("qwen_adapter", {})
     NEMOTRON_ADAPTER_CONFIG = config.get("nemotron_adapter", {})
     CLAUDE_ADAPTER_CONFIG = config.get("claude_adapter", {})
+    GEMMA_ADAPTER_CONFIG = config.get("gemma_adapter", {})
+    MISTRAL_ADAPTER_CONFIG = config.get("mistral_adapter", {})
 
     logger.info(f"Adapter factory initialized with {len(RULES)} routing rules")
     logger.info(f"Max context: {MAX_CONTEXT:,} tokens")
@@ -52,6 +56,8 @@ except ConfigError as e:
     QWEN_ADAPTER_CONFIG = {}
     NEMOTRON_ADAPTER_CONFIG = {}
     CLAUDE_ADAPTER_CONFIG = {}
+    GEMMA_ADAPTER_CONFIG = {}
+    MISTRAL_ADAPTER_CONFIG = {}
     logger.warning("Using default adapter configuration")
 
 
@@ -110,10 +116,33 @@ def get_adapter(
             max_output_tokens=max_output_tokens
         )
 
+    elif selected_type == "gemma":
+        # Extract Gemma-specific settings
+        default_max_tokens = GEMMA_ADAPTER_CONFIG.get("default_max_tokens", 16384)
+        max_output_tokens = GEMMA_ADAPTER_CONFIG.get("max_output_tokens", 65536)
+
+        adapter = GemmaAdapter(
+            max_context=MAX_CONTEXT,
+            default_max_tokens=default_max_tokens,
+            max_output_tokens=max_output_tokens
+        )
+
     elif selected_type == "nemotron":
         adapter = NemotronAdapter(
             max_context=MAX_CONTEXT,
             **NEMOTRON_ADAPTER_CONFIG
+        )
+
+    elif selected_type == "mistral":
+        default_max_tokens = MISTRAL_ADAPTER_CONFIG.get("default_max_tokens", 16384)
+        max_output_tokens = MISTRAL_ADAPTER_CONFIG.get("max_output_tokens", 65536)
+        autonomous_system_prompt = MISTRAL_ADAPTER_CONFIG.get("autonomous_system_prompt")
+
+        adapter = MistralAdapter(
+            max_context=MAX_CONTEXT,
+            default_max_tokens=default_max_tokens,
+            max_output_tokens=max_output_tokens,
+            autonomous_system_prompt=autonomous_system_prompt
         )
 
     else:  # openai or unknown
@@ -135,7 +164,7 @@ def reload_config() -> None:
         ConfigError: If config reload fails
     """
     global config, RULES, MAX_CONTEXT
-    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG
+    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG, GEMMA_ADAPTER_CONFIG, MISTRAL_ADAPTER_CONFIG
 
     logger.info("Reloading adapter factory configuration...")
 
@@ -147,6 +176,8 @@ def reload_config() -> None:
         QWEN_ADAPTER_CONFIG = config.get("qwen_adapter", {})
         NEMOTRON_ADAPTER_CONFIG = config.get("nemotron_adapter", {})
         CLAUDE_ADAPTER_CONFIG = config.get("claude_adapter", {})
+        GEMMA_ADAPTER_CONFIG = config.get("gemma_adapter", {})
+        MISTRAL_ADAPTER_CONFIG = config.get("mistral_adapter", {})
 
         logger.info(f"Configuration reloaded: {len(RULES)} rules, {MAX_CONTEXT:,} max context")
 

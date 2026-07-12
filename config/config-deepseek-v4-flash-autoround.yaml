@@ -1,0 +1,70 @@
+# LLM Orchestrator - Intel DeepSeek V4 Flash AutoRound Configuration (500K Context)
+# Model: Intel/DeepSeek-V4-Flash-W4A16-AutoRound (284B MoE, 13B Active)
+# Quantization: AutoRound W4A16 (weights) + FP8 KV Cache
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "Intel/DeepSeek-V4-Flash-W4A16-AutoRound"
+  served_model_name: "oracle-v4-flash"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "bf16"        # Activations are standard 16-bit
+  engine_preference: "v0"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "bfloat16"                # Activations are standard BF16
+  gpu_memory_utilization: 0.96     # Conservative 90% allocation for safe headroom
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASH_ATTN"  # Use stable FlashAttention v2
+  disable_custom_all_reduce: true  # CRITICAL: Disables custom CUDA kernel reductions, preventing PCIe bus saturation
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings - 500K context window
+  max_model_len: 524288
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # Mandatory for DeepSeek-V4
+
+  # MoE Settings
+  enable_expert_parallel: true     # Required for 284B MoE routing
+  moe_backend: "triton"            # Force Triton MoE backend to strictly bypass SM90-only DeepGEMM/DeepEP paths
+
+  # Prefill optimization
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 4096     # Safe prefill chunk size
+  max_num_seqs: 2                  # Allow up to 2 concurrent sequences
+
+  # Tool calling and reasoning
+  tool_call_parser: "qwen3_coder"  # XML format parser
+  reasoning_parser: "super_v3"     # Reasoning extractor
+
+  # Performance and memory optimization
+  enforce_eager: true              # CRITICAL: Disables CUDA graphs to prevent stream capture invalidated errors on SM89
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"
+    VLLM_MLA_DISABLE: "1"                             # CRITICAL: Bypasses Hopper/SM90 FlashMLA and forces SM89 standard fallbacks
+    CUTE_DSL_ARCH: "sm_89"                            # CRITICAL: Forces CUTLASS JIT compiler to target Ada Lovelace (SM89) instead of Hopper SM90
+    TORCH_CUDA_ARCH_LIST: "8.9"                       # Forces PyTorch/Triton JIT compilers to target RTX 6000 Ada (SM89)
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual VRAM memory fragmentation
+    NCCL_P2P_DISABLE: "1"                             # CRITICAL: Prevents driver deadlocks on non-NVLink PCIe systems
+    NCCL_IB_DISABLE: "1"                                # Disable InfiniBand explicitly
+    NCCL_SHM_DISABLE: "0"                               # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"                    # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    VLLM_USE_V1: "0"                                    # Disable V1 for stable execution
+    HF_HUB_OFFLINE: "1"                                 # Force strict offline mode to prevent network socket hangs

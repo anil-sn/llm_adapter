@@ -1,0 +1,73 @@
+# LLM Orchestrator - Nemotron Labs 3 Puzzle 75B FP8 Configuration
+# Model: nvidia/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-FP8
+# Inherits from: config.yaml, config-adapter.yaml
+# Hybrid Mamba-2 + MoE + Attention (75.3B total, 9.3B active parameters)
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "nvidia/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-FP8"
+  served_model_name: "nemotron-puzzle-fp8"
+  tokenizer_mode: "auto"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.90     # Leaves 10% for dynamic allocations
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASHINFER"  # Native FP8 attention + hybrid Mamba kernel support
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings (Highly efficient FP8 KV cache enables massive contexts)
+  max_model_len: 1048576           # 1M context (4× YaRN scaling, FP8 KV cache)
+
+  # Batch settings
+  max_num_batched_tokens: 16384    # High-throughput batch size
+  max_num_seqs: 128                # High concurrency support
+
+  # Features
+  enable_prefix_caching: true      # Reuses prefix KV cache for repeated prompts
+  enable_chunked_prefill: true     # Interleaves prefill and decode to stabilize latency
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # Native FP8 KV Cache
+
+  # MoE & Mamba settings
+  enable_expert_parallel: true     # Required for Nemotron Labs MoE expert routing
+
+  # MTP Configuration (Multi-Token Prediction Speculative Decoding)
+  # Uses the 3.8B MTP head to predict future tokens simultaneously for speedups
+  hf_overrides:
+    num_nextn_predict_layers: 4    # Nemotron Puzzle uses a 4-token MTP spec head
+
+  # RoPE scaling configuration (extends context from 256K to 1M)
+  rope_scaling:
+    rope_type: "yarn"              # YaRN scaling method (vLLM expects rope_type not type)
+    factor: 4.0                    # 4× scaling from 256K native
+    original_max_position_embeddings: 262144
+
+  # Reasoning settings
+  reasoning_parser: "super_v3"     # Nemotron Super V3 parser for CoT outputs
+  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # XML format tool parser
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_USE_V1: "1"                       # Enables modern V1 engine architecture
+    
+    # PCIe Multi-GPU P2P Interconnect Tuning (Optimized for RTX 6000 Ada)
+    NCCL_P2P_DISABLE: "0"
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_IB_DISABLE: "1"
+    NCCL_NET_GDR_LEVEL: "5"

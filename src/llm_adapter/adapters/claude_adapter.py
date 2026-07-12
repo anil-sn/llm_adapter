@@ -12,39 +12,33 @@ import json
 import logging
 import uuid
 import time
-from typing import Any, AsyncGenerator, List, Dict, Union
+from typing import Any, AsyncGenerator, List, Dict, Union, Optional
 from .openai_adapter import OpenAIAdapter
+from .tool_id_utils import _IdDeduplicationContext, _deduplicate_tool_id, _resolve_tool_result_id
 
 logger = logging.getLogger("claude-adapter")
 
-SYSTEM_GUARD_CONTENT = "Respond concisely. No reasoning. No meta-commentary like 'Okay, the user sent...'"
+SYSTEM_GUARD_CONTENT = """You are a direct, action-oriented assistant. Follow these rules strictly:
+
+1. TOOL USE: When tools are available, USE THEM immediately without explaining. Execute tool calls directly.
+2. BREVITY: No explanations before tool use. No "I will" or "Let me" - just make the tool call.
+3. FAILURE HANDLING: If a tool call fails after 1-2 attempts, report the issue and stop.
+4. NO TEXT MIXING: When calling tools, do not mix explanatory text with tool calls. Just call the tool.
+5. DIRECT ACTION: Respond with tool calls when tools match the request. Explanation comes after results."""
+
 
 class ClaudeAdapter(OpenAIAdapter):
     """
     Protocol Enforcer Claude Adapter:
     Guarantees Anthropic Messages API compliance via a state-driven emitter.
     """
-    def __init__(self, max_context: int = 32768):
+    def __init__(self, max_context: int = 900000, default_max_tokens: int = 16384, **kwargs):
         super().__init__(max_context=max_context)
         self.thinking_requested = False
         self.incoming_protocol = "openai"
         self.message_id = f"msg_{uuid.uuid4().hex}"
         self.estimated_input_tokens = 0
-
-    def _fix_escaped_newlines(self, obj):
-        """
-        Fix Gemma 4 tool calling issue: recursively unescape literal \\n in string values.
-        Gemma 4 sometimes outputs JSON with escaped newlines that should be actual newlines.
-        """
-        if isinstance(obj, dict):
-            return {k: self._fix_escaped_newlines(v) for k, v in obj.items()}
-        elif isinstance(obj, list):
-            return [self._fix_escaped_newlines(item) for item in obj]
-        elif isinstance(obj, str):
-            # Replace literal \n with actual newlines
-            # Also handle \t, \r, and other common escapes
-            return obj.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
-        return obj
+        self.default_max_tokens = default_max_tokens
 
     def is_prefill(self, content: str) -> bool:
         prefill_tokens = ['{', '[', '```', '{"', '[{', '<']
@@ -101,6 +95,9 @@ class ClaudeAdapter(OpenAIAdapter):
         if final_system_parts:
             openai_messages.append({"role": "system", "content": "\n".join(final_system_parts)})
 
+        # CRITICAL: Initialize deduplication context for this request to prevent duplicate tool IDs
+        dedup_ctx = _IdDeduplicationContext()
+
         for m in other_messages:
             role = m.get("role")
             content = m.get("content")
@@ -109,24 +106,60 @@ class ClaudeAdapter(OpenAIAdapter):
 
             if isinstance(content, list):
                 text_parts = []
+                tool_calls = []
                 for block in content:
                     b_type = block.get("type")
                     if b_type == "text":
                         text_parts.append(block.get("text", ""))
+                    elif b_type == "tool_use":
+                        # Convert Claude tool_use to OpenAI tool_calls format
+                        # CRITICAL FIX: Use deduplication context to prevent duplicate IDs
+                        raw_id = block.get("id")
+                        sanitized_id = _deduplicate_tool_id(raw_id, dedup_ctx) if raw_id else raw_id
+                        tool_calls.append({
+                            "id": sanitized_id,
+                            "type": "function",
+                            "function": {
+                                "name": block.get("name"),
+                                "arguments": json.dumps(block.get("input", {}))
+                            }
+                        })
                     elif b_type == "tool_result":
+                        # CRITICAL FIX: Use deduplication context to resolve tool_use_id
+                        raw_tool_id = block.get("tool_use_id")
+                        sanitized_tool_id = _resolve_tool_result_id(raw_tool_id, dedup_ctx) if raw_tool_id else raw_tool_id
+                        
+                        # Properly parse list content vs string content
+                        block_content = block.get("content", "")
+                        if isinstance(block_content, list):
+                            c_str = "\n".join(
+                                part.get("text", "")
+                                for part in block_content
+                                if isinstance(part, dict) and part.get("type") == "text" and "text" in part
+                            )
+                        else:
+                            c_str = str(block_content)
+                            
                         openai_messages.append({
                             "role": "tool",
-                            "tool_call_id": block.get("tool_use_id"),
-                            "content": str(block.get("content", ""))
+                            "tool_call_id": sanitized_tool_id,
+                            "content": c_str
                         })
-                # Only update content if there are text parts
-                if text_parts:
-                    m["content"] = " ".join(text_parts)
-                else:
-                    # Skip this message - it only had tool_result blocks which were already added
-                    continue
 
-            if role != "tool":
+                # Build the message based on what we found
+                if tool_calls:
+                    # Assistant message with tool calls
+                    openai_messages.append({
+                        "role": "assistant",
+                        "content": " ".join(text_parts) if text_parts else None,
+                        "tool_calls": tool_calls
+                    })
+                elif text_parts:
+                    # Regular message with text
+                    m["content"] = " ".join(text_parts)
+                    openai_messages.append(m)
+                # else: only tool_result blocks, already added to openai_messages
+            elif role != "tool":
                 openai_messages.append(m)
 
         # Validate: Final messages must have at least one user/assistant message (not just system)
@@ -269,8 +302,36 @@ class ClaudeAdapter(OpenAIAdapter):
             body["__tool_overhead_tokens__"] = tool_overhead
 
         # Unified clamping (single pass, 5% safety margin)
+        original_max_tokens = body.get("max_tokens")
         body = self.clamp_max_tokens(body, self.max_context)
         clamped_max_tokens = body.get("max_tokens")
+
+        logger.info(f"TokenBudget: original={original_max_tokens}, default={self.default_max_tokens}, clamped={clamped_max_tokens}")
+
+        # Fix message ordering for Mistral's strict role transition validation
+        # Mistral enforces: user→assistant, assistant→tool, tool→assistant
+        # Problem: Claude format can have user messages with tool_result blocks,
+        # which get converted to role='tool'. If previous message was 'user',
+        # we get user→tool which is invalid for Mistral.
+        # Fix: Insert empty assistant message before tool messages if needed.
+        openai_messages = self._fix_mistral_message_order(openai_messages)
+
+        # 6. Tool Choice Conversion (Anthropic → OpenAI)
+        tool_choice_param = body.get("tool_choice")
+        openai_tool_choice = self._convert_tool_choice(tool_choice_param, openai_tools)
+
+        # Build extra_body
+        extra_body = {}
+        if self.thinking_requested:
+            extra_body["enable_thinking"] = True
+
+        # Log tool choice for debugging
+        if openai_tool_choice and openai_tool_choice != "auto":
+            if isinstance(openai_tool_choice, dict):
+                tool_name = openai_tool_choice.get("function", {}).get("name")
+                logger.info(f"Tool choice: forced '{tool_name}'")
+            else:
+                logger.info(f"Tool choice: {openai_tool_choice}")
 
         return {
             "model": body.get("model"),
@@ -279,9 +340,125 @@ class ClaudeAdapter(OpenAIAdapter):
             "max_tokens": clamped_max_tokens,
             "temperature": body.get("temperature", 0.7),
             "tools": openai_tools if openai_tools else None,
-            "tool_choice": "auto" if openai_tools else None,
-            "extra_body": {"enable_thinking": True} if self.thinking_requested else None
+            "tool_choice": openai_tool_choice,
+            "extra_body": extra_body if extra_body else None
         }
+
+    def _convert_tool_choice(self, tool_choice: Any, openai_tools: list) -> Union[str, Dict, None]:
+        """
+        Convert Anthropic tool_choice to OpenAI format.
+
+        Anthropic formats:
+        - "auto": Let model decide
+        - "any": Force any tool use → OpenAI "required"
+        - {"type": "tool", "name": "tool_name"}: Force specific tool
+        - None or missing: Default to "auto" if tools present
+
+        OpenAI formats:
+        - "auto": Model decides
+        - "none": Never use tools
+        - "required": Must use a tool (OpenAI extension, vLLM supports via guided_decoding)
+        - {"type": "function", "function": {"name": "..."}}: Specific tool
+
+        Args:
+            tool_choice: Client-provided tool_choice (Anthropic or OpenAI format)
+            openai_tools: List of tools in OpenAI format
+
+        Returns:
+            OpenAI-compatible tool_choice value
+        """
+        if not openai_tools:
+            return None
+
+        if tool_choice is None:
+            return "auto"
+
+        # Already in OpenAI format (string or dict)
+        if isinstance(tool_choice, str):
+            if tool_choice in ["auto", "none", "required"]:
+                return tool_choice
+            # Anthropic's "any" → OpenAI's "required"
+            if tool_choice == "any":
+                return "required"
+
+        # Anthropic format: {"type": "tool", "name": "..."}
+        if isinstance(tool_choice, dict):
+            if tool_choice.get("type") == "tool":
+                tool_name = tool_choice.get("name")
+                # Validate tool exists in tools list
+                if tool_name:
+                    tool_exists = any(
+                        t.get("function", {}).get("name") == tool_name
+                        for t in openai_tools
+                    )
+                    if tool_exists:
+                        return {
+                            "type": "function",
+                            "function": {"name": tool_name}
+                        }
+                    else:
+                        logger.warning(f"tool_choice references non-existent tool '{tool_name}', falling back to 'auto'")
+                        return "auto"
+            # Already OpenAI format: {"type": "function", "function": {...}}
+            elif tool_choice.get("type") == "function":
+                # Validate for OpenAI format too
+                tool_name = tool_choice.get("function", {}).get("name")
+                if tool_name:
+                    tool_exists = any(
+                        t.get("function", {}).get("name") == tool_name
+                        for t in openai_tools
+                    )
+                    if tool_exists:
+                        return tool_choice
+                    else:
+                        logger.warning(f"tool_choice references non-existent tool '{tool_name}', falling back to 'auto'")
+                        return "auto"
+
+        # Fallback to auto for unknown formats
+        logger.warning(f"Unknown tool_choice format: {tool_choice}, defaulting to 'auto'")
+        return "auto"
+
+    def _fix_mistral_message_order(self, messages: list) -> list:
+        """
+        Fix message ordering for Mistral's strict role transition validation.
+
+        Mistral (via mistral_common validator) enforces these role transitions:
+        - user → assistant, system, user (NOT tool)
+        - assistant → assistant, user, tool
+        - tool → assistant, tool, user
+        - system → user, assistant, system
+
+        Problem: In rare edge cases, messages might have invalid transitions.
+
+        Solution: Validate transitions and insert assistant acknowledgment if needed.
+
+        Args:
+            messages: List of OpenAI format messages
+
+        Returns:
+            Fixed message list with valid role transitions
+        """
+        if not messages or len(messages) < 2:
+            return messages
+
+        fixed = []
+        prev_role = None
+
+        for msg in messages:
+            current_role = msg.get("role")
+
+            # Check for invalid user→tool transition (should never happen now)
+            if prev_role == "user" and current_role == "tool":
+                logger.warning("Unexpected user→tool transition detected - inserting assistant acknowledgment")
+                fixed.append({
+                    "role": "assistant",
+                    "content": "Acknowledged."
+                })
+
+            fixed.append(msg)
+            prev_role = current_role
+
+        return fixed
 
     def normalize_response(self, resp: dict) -> dict:
         """Standard JSON response normalization."""
@@ -313,12 +490,6 @@ class ClaudeAdapter(OpenAIAdapter):
                     content = re.sub(r'<think>.*?</think>\s*', '', content, flags=re.DOTALL)
                     # Also handle unclosed </think> tags
                     content = re.sub(r'</think>\s*', '', content)
-
-                    # Remove Gemma 4 thinking tokens: <|channel>thought...<channel|>
-                    content = re.sub(r'<\|channel>thought.*?<channel\|>\s*', '', content, flags=re.DOTALL)
-                    # Handle partial/unclosed tags
-                    content = re.sub(r'<\|channel>thought.*?$', '', content, flags=re.DOTALL)
-                    content = re.sub(r'<channel\|>\s*', '', content)
 
                     # Remove reasoning patterns (aggressive filtering for Nemotron-3)
                     # Pattern 1: "User asks/said..." at start
@@ -355,10 +526,7 @@ class ClaudeAdapter(OpenAIAdapter):
                 for tc in tool_calls:
                     try:
                         args_str = tc["function"]["arguments"]
-                        # Fix Gemma 4 issue: unescape literal \n in string values
                         args = json.loads(args_str)
-                        # Recursively fix escaped newlines in all string values
-                        args = self._fix_escaped_newlines(args)
                     except:
                         args = {}
                     content.append({"type": "tool_use", "id": tc["id"], "name": tc["function"]["name"], "input": args})
@@ -478,7 +646,7 @@ class ClaudeAdapter(OpenAIAdapter):
                             # Accumulate function details
                             if "function" in tc:
                                 func = tc["function"]
-                                if "name" in func:
+                                if "name" in func and func["name"] is not None:
                                     tool_calls_by_index[idx]["function"]["name"] = func["name"]
                                 if "arguments" in func:
                                     tool_calls_by_index[idx]["function"]["arguments"] += func["arguments"]
@@ -500,16 +668,11 @@ class ClaudeAdapter(OpenAIAdapter):
 
                     text = delta.get("content", "")
                     if text:
-                        # CRITICAL FIX: Properly handle <think>...</think> blocks and Gemma 4 thinking tokens
+                        # CRITICAL FIX: Properly handle <think>...</think> blocks
                         # For Qwen models that wrap reasoning in think tags before tool calls,
                         # we need to skip ALL content inside these blocks (not just the tags)
                         if not self.thinking_requested:
-                            # Remove Gemma 4 thinking tokens
                             import re
-                            text = re.sub(r'<\|channel>thought.*?<channel\|>', '', text, flags=re.DOTALL)
-                            text = re.sub(r'<\|channel>thought.*?$', '', text, flags=re.DOTALL)
-                            text = re.sub(r'<channel\|>', '', text)
-
                             # Track state across chunks
                             if "<think>" in text:
                                 in_think_block = True
@@ -559,8 +722,13 @@ class ClaudeAdapter(OpenAIAdapter):
                     # Extract tool call details with proper error handling
                     tool_id = tc.get("id")
                     if not tool_id:
-                        logger.error(f"Tool call missing 'id' at index {idx}")
-                        continue
+                        # vLLM doesn't always send IDs in streaming mode for some models (e.g., Mistral)
+                        # Generate a deterministic ID based on index and function name
+                        function = tc.get("function", {})
+                        tool_name = function.get("name", "unknown")
+                        tool_id = f"call_{tool_name}_{idx}"
+                        logger.debug(f"Generated tool_call_id for streaming: {tool_id}")
+                        tc["id"] = tool_id  # Update the dict so we have it for later
 
                     function = tc.get("function", {})
                     tool_name = function.get("name")
@@ -585,15 +753,6 @@ class ClaudeAdapter(OpenAIAdapter):
                     # Claude Code CLI expects this incremental format
                     args_str = function.get("arguments", "")
                     if args_str:
-                        # Fix Gemma 4 escaped newlines in the JSON string
-                        try:
-                            # Parse and re-serialize to fix escapes
-                            args_obj = json.loads(args_str)
-                            args_obj = self._fix_escaped_newlines(args_obj)
-                            args_str = json.dumps(args_obj)
-                        except:
-                            pass  # If parsing fails, send as-is
-
                         yield sse("content_block_delta", {
                             "type": "content_block_delta",
                             "index": idx,

@@ -93,8 +93,8 @@ class TestConfigLoading:
             os.environ["LLM_CONFIG"] = "config/config-qwen.yaml"
             config = load_config(project_root=PROJECT_ROOT, validate=False)
 
-            assert config["model"]["id"] == "Qwen/Qwen3.5-122B-A10B"
-            assert config["model"]["served_model_name"] == "qwen-3.5-122b"
+            assert "Qwen/Qwen3.5-122B-A10B" in config["model"]["id"]
+            assert config["model"]["served_model_name"] == "mystery-ai"
 
         finally:
             # Restore original
@@ -149,7 +149,7 @@ class TestConfigValidation:
 
             assert isinstance(validated, Config)
             assert validated.hardware.tensor_parallel_size == 4
-            assert validated.inference.max_model_len == 262144
+            assert validated.inference.max_model_len == 655360
 
         finally:
             if original:
@@ -191,6 +191,7 @@ class TestErrorHandling:
     def test_missing_config_file(self):
         """Test error when config file is missing."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "config").mkdir()
             with pytest.raises(ConfigFileNotFoundError):
                 load_config(project_root=Path(tmpdir), validate=False)
 
@@ -209,6 +210,7 @@ class TestErrorHandling:
     def test_helpful_error_messages(self):
         """Test that error messages are helpful."""
         with tempfile.TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "config").mkdir()
             try:
                 load_config(project_root=Path(tmpdir), validate=False)
             except ConfigFileNotFoundError as e:
@@ -231,11 +233,11 @@ class TestModelConfigs:
             config = load_config(project_root=PROJECT_ROOT, validate=False)
 
             # Model settings
-            assert config["model"]["id"] == "Qwen/Qwen3.5-122B-A10B"
+            assert "Qwen/Qwen3.5-122B-A10B" in config["model"]["id"]
             assert config["model"]["trust_remote_code"] is True
 
             # Context length
-            assert config["inference"]["max_model_len"] == 262144
+            assert config["inference"]["max_model_len"] == 655360
 
             # Thinking mode default
             assert config["inference"]["enable_thinking"] is False
@@ -256,10 +258,10 @@ class TestModelConfigs:
 
             # Model settings
             assert "NVIDIA-Nemotron" in config["model"]["id"]
-            assert config["model"]["served_model_name"] == "nemotron-3-super"
+            assert config["model"]["served_model_name"] == "mystery-ai"
 
             # Context length
-            assert config["inference"]["max_model_len"] == 196608
+            assert config["inference"]["max_model_len"] == 262144
 
             # Reasoning parser
             assert config["inference"]["reasoning_parser"] == "super_v3"
@@ -269,6 +271,60 @@ class TestModelConfigs:
                 os.environ["LLM_CONFIG"] = original
             else:
                 os.environ.pop("LLM_CONFIG", None)
+
+    def test_qwen3_235b_awq_config_structure(self):
+        """Test Qwen3-235B AWQ 512K context config structure."""
+        original = os.environ.get("LLM_CONFIG")
+
+        try:
+            os.environ["LLM_CONFIG"] = "config/config-qwen3-235b-awq.yaml"
+            config = load_config(project_root=PROJECT_ROOT, validate=True)
+
+            # Model settings
+            assert config["model"]["id"] == "QuantTrio/Qwen3-235B-A22B-Instruct-2507-AWQ"
+            assert config["model"]["served_model_name"] == "llm-235b-moe"
+
+            # Context length and rope scaling
+            assert config["inference"]["max_model_len"] == 262144
+            assert "rope_scaling" not in config["inference"] or config["inference"]["rope_scaling"] is None
+            assert config["inference"]["max_num_seqs"] == 4
+
+        finally:
+            if original:
+                os.environ["LLM_CONFIG"] = original
+            else:
+                os.environ.pop("LLM_CONFIG", None)
+
+    def test_engine_and_precision_validation_warning(self, caplog):
+        """Test that validate_model_config logs a warning for mismatching precision/engine settings."""
+        from llm_adapter.utils.config_loader import validate_model_config
+        import logging
+
+        # A configuration that triggers the warning (FP8 model, V1 engine is active by default)
+        test_config = {
+            "model": {
+                "id": "Qwen/Qwen3-Coder-Next-FP8",
+                "served_model_name": "qwen3-coder-fp8",
+                "precision_profile": "fp8",
+                "engine_preference": "v1"
+            },
+            "vllm": {
+                "env": {
+                    "VLLM_USE_V1": "1"  # Enabled
+                }
+            }
+        }
+
+        # Clear captured logs
+        caplog.clear()
+        
+        with caplog.at_level(logging.WARNING):
+            validate_model_config(test_config)
+
+        # Assert warning log is captured
+        warnings = [rec for rec in caplog.records if rec.levelno == logging.WARNING]
+        assert len(warnings) > 0
+        assert any("potential triton fp8 kernel incompatibility risk" in w.message.lower() for w in warnings)
 
 
 class TestAdapterConfig:

@@ -17,7 +17,7 @@ replicas:
 
 model:
   id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8"
-  served_model_name: "nemotron-3-super"
+  served_model_name: "mystery-ai"  # Abstracted - hides model identity
 
 hardware:
   tensor_parallel_size: 4

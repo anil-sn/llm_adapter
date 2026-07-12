@@ -246,6 +246,44 @@ def validate_base_config(config: Dict[str, Any]) -> None:
     logger.debug("Base config validation passed")
 
 
+def validate_engine_and_precision(config: Dict[str, Any]) -> None:
+    """
+    Purely observational guardrail validator.
+    Logs a warning if a low-precision profile (FP8/NVFP4) is loaded
+    while the vLLM V1 engine is active, to flag potential Triton kernel incompatibilities.
+    """
+    model = config.get("model", {})
+    model_id = model.get("id", "Unknown")
+    precision = model.get("precision_profile")
+
+    # Heuristic fallback if precision_profile is not explicitly defined yet
+    if not precision and isinstance(model_id, str):
+        if "nvfp4" in model_id.lower():
+            precision = "nvfp4"
+        elif "fp8" in model_id.lower():
+            precision = "fp8"
+
+    if precision in ["fp8", "nvfp4"]:
+        vllm_env = config.get("vllm", {}).get("env", {})
+        v1_env = vllm_env.get("VLLM_USE_V1") or os.environ.get("VLLM_USE_V1")
+        
+        # If VLLM_USE_V1 is not explicitly "0", the V1 engine is considered active by default
+        if v1_env != "0":
+            logger.warning("=" * 80)
+            logger.warning(
+                f"⚠ WARNING: Model '{model_id}' uses '{precision}' precision, but the vLLM V1 engine is active "
+                f"(VLLM_USE_V1={v1_env or 'Default (1)'})."
+            )
+            logger.warning(
+                "Potential Triton FP8 kernel incompatibility risk detected on Ada Lovelace GPUs."
+            )
+            logger.warning(
+                "Recommendation: Set VLLM_USE_V1: \"0\" in the model configuration's vllm.env section "
+                "to fall back to the stable V0 engine."
+            )
+            logger.warning("=" * 80)
+
+
 def validate_model_config(config: Dict[str, Any]) -> None:
     """
     Validate model configuration has required fields.
@@ -269,6 +307,9 @@ def validate_model_config(config: Dict[str, Any]) -> None:
             f"Required: {required_fields}\n"
             f"Found: {list(model.keys())}"
         )
+
+    # Run the engine and precision checks
+    validate_engine_and_precision(config)
 
     logger.debug(f"Model config validation passed: {model.get('id')}")
 

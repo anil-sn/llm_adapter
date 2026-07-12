@@ -17,8 +17,9 @@ class BaseAdapter(ABC):
     Ensures consistent request building and response normalization.
     """
     
-    def __init__(self, max_context: int = 32768):
+    def __init__(self, max_context: int = 32768, default_max_tokens: int = 4096):
         self.max_context = max_context
+        self.default_max_tokens = default_max_tokens  # Default output tokens if not specified
         self.original_model_name = None  # Track original model name from client
 
     @abstractmethod
@@ -56,8 +57,8 @@ class BaseAdapter(ABC):
         import logging
         logger = logging.getLogger("base-adapter")
 
-        RESERVE_TOKENS=100          # JSON overhead
-        MIN_COMPLETION_TOKENS=256   # Minimum viable output
+        RESERVE_TOKENS=100            # JSON overhead
+        MIN_COMPLETION_TOKENS=2048    # Minimum viable output (increased from 256 for complex tasks)
         CHARS_PER_TOKEN=3.5         # Balanced estimate: ~3.5 chars per token
                                       # (Conservative but not overly so)
 
@@ -135,6 +136,22 @@ class BaseAdapter(ABC):
                     break
 
             kept.reverse()
+
+            # --- FIX: If user message is too large and got dropped, truncate its content to fit ---
+            if not kept and rest:
+                last_msg = rest[-1].copy()
+                content = last_msg.get("content", "")
+                if isinstance(content, str):
+                    allowed_chars = int(budget_rest * CHARS_PER_TOKEN) - 100
+                    if allowed_chars > 200:
+                        last_msg["content"] = content[:allowed_chars] + "\n\n[Content truncated to fit context limits...]"
+                        kept.append(last_msg)
+                    else:
+                        last_msg["content"] = "[Content truncated]"
+                        kept.append(last_msg)
+                else:
+                    kept.append(last_msg)
+
             return system_msgs + kept
 
         # 1. Estimate input tokens
@@ -152,7 +169,7 @@ class BaseAdapter(ABC):
         total_input_tokens = prompt_tokens + tool_overhead
 
         # 4. Get requested output tokens
-        requested_max_tokens = body.get("max_tokens", 4096)
+        requested_max_tokens = body.get("max_tokens", self.default_max_tokens)
 
         # 5. Check if truncation needed
         available_completion = max_context - total_input_tokens - RESERVE_TOKENS

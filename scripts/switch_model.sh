@@ -30,6 +30,9 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Model configurations
 QWEN_CONFIG="config/config-qwen.yaml"
 NEMOTRON_CONFIG="config/config-nemotron.yaml"
+DEEPSEEK_FLASH_CONFIG="config/config-deepseek-v4-flash-nvfp4.yaml"
+DEEPSEEK_AUTOROUND_CONFIG="config/config-deepseek-v4-flash-autoround.yaml"
+DEEPSEEK_PRO_AUTOROUND_CONFIG="config/config-deepseek-v4-pro-autoround.yaml"
 
 # Change to project root
 cd "$PROJECT_ROOT"
@@ -64,11 +67,14 @@ if [ $# -eq 0 ]; then
     print_header
     print_error "No model specified"
     echo ""
-    echo "Usage: $0 {qwen|nemotron}"
+    echo "Usage: $0 {qwen|nemotron|deepseek|deepseek-intel|deepseek-pro}"
     echo ""
     echo "Available models:"
-    echo "  qwen     - Qwen3.5-122B-A10B-GPTQ-Int4 (262K context, RECOMMENDED)"
-    echo "  nemotron - Nemotron-3-Super-120B (192K context, stable)"
+    echo "  qwen           - Qwen3.5-122B-A10B-GPTQ-Int4 (262K context, RECOMMENDED)"
+    echo "  nemotron       - Nemotron-3-Super-120B (192K context, stable)"
+    echo "  deepseek       - DeepSeek-V4-Flash-NVFP4 (1M context, 284B MoE, ultra-efficient)"
+    echo "  deepseek-intel - Intel/DeepSeek-V4-Flash-W4A16-AutoRound (500K context, stable 4-bit)"
+    echo "  deepseek-pro   - Intel/DeepSeek-V4-Pro-W4A16-AutoRound (500K context, Pro 4-bit)"
     echo ""
     exit 1
 fi
@@ -87,12 +93,30 @@ case "$MODEL" in
         MODEL_NAME="Nemotron-3-Super-120B"
         MODEL_FEATURES="192K context, production-stable"
         ;;
+    deepseek|deepseek-flash)
+        CONFIG_FILE="$DEEPSEEK_FLASH_CONFIG"
+        MODEL_NAME="DeepSeek-V4-Flash-NVFP4"
+        MODEL_FEATURES="1M context, NVFP4 quantized 284B MoE (13B active), ultra-efficient"
+        ;;
+    deepseek-intel|deepseek-autoround|intel)
+        CONFIG_FILE="$DEEPSEEK_AUTOROUND_CONFIG"
+        MODEL_NAME="Intel/DeepSeek-V4-Flash-W4A16-AutoRound"
+        MODEL_FEATURES="500K context, AutoRound 4-bit Weight-Only 284B MoE (13B active), stable"
+        ;;
+    deepseek-pro|intel-pro)
+        CONFIG_FILE="$DEEPSEEK_PRO_AUTOROUND_CONFIG"
+        MODEL_NAME="Intel/DeepSeek-V4-Pro-W4A16-AutoRound"
+        MODEL_FEATURES="500K context, AutoRound 4-bit Weight-Only Pro MoE, stable"
+        ;;
     *)
         print_error "Unknown model: $MODEL"
         echo ""
         echo "Available models:"
-        echo "  qwen     - Qwen3.5-122B GPTQ Int4 (RECOMMENDED)"
-        echo "  nemotron - Nemotron-3-Super-120B (192K context)"
+        echo "  qwen           - Qwen3.5-122B GPTQ Int4 (RECOMMENDED)"
+        echo "  nemotron       - Nemotron-3-Super-120B (192K context)"
+        echo "  deepseek       - DeepSeek-V4-Flash-NVFP4 (1M context)"
+        echo "  deepseek-intel - Intel/DeepSeek-V4-Flash-W4A16-AutoRound (500K context)"
+        echo "  deepseek-pro   - Intel/DeepSeek-V4-Pro-W4A16-AutoRound (500K context)"
         exit 1
         ;;
 esac
@@ -184,10 +208,6 @@ echo "                       -H 'Content-Type: application/json' \\"
 echo "                       -d '{\"model\":\"$MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
 echo "  3. Monitor logs: tail -f logs/vllm_replica_0.log"
 echo ""
-echo "To switch back, run:"
-if [ "$MODEL" = "qwen" ]; then
-    echo "  ./scripts/switch_model.sh nemotron"
-else
-    echo "  ./scripts/switch_model.sh qwen"
-fi
+echo "To switch to another model, run:"
+echo "  ./scripts/switch_model.sh {qwen|nemotron|deepseek}"
 echo ""

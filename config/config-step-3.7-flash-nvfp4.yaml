@@ -1,0 +1,73 @@
+# LLM Orchestrator - Step-3.7-Flash-NVFP4 Configuration (256K Context)
+# Model: stepfun-ai/Step-3.7-Flash-NVFP4 (198B MoE, 11B Active)
+# Quantization: NVFP4 (NVIDIA 4-bit weights) / BF16 (activations) + FP8 KV Cache
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Compatibility: Highly optimized for shared workstation environments (fits with active background sessions)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "stepfun-ai/Step-3.7-Flash-NVFP4"
+  served_model_name: "step-3.7-flash-nvfp4"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "nvfp4"
+  engine_preference: "v0"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "bfloat16"                # Execution datatype
+  gpu_memory_utilization: 0.90     # Comfortable 90% allocation (Safe and fits alongside background GPU sessions)
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASHINFER"  # Use optimized FlashInfer for 256K context and FP8 decoding
+  disable_custom_all_reduce: true  # CRITICAL: Disables custom CUDA kernel reductions, preventing PCIe bus saturation
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings - 256K tokens (0.256M)
+  max_model_len: 262144
+
+  # YaRN RoPE Scaling for 256K context (8x from 32K)
+  rope_scaling:
+    type: "yarn"
+    factor: 8.0
+    original_max_position_embeddings: 32768
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency (critical for 256K context)
+  enable_prefix_caching: true      # REUSES KV Cache for identical prefixes (huge memory and prefill latency saver)
+
+  # MoE Settings
+  enable_expert_parallel: true     # Required for 198B MoE routing
+  moe_backend: "marlin"            # Highly optimized 4-bit Marlin MoE kernel (unlocked via custom FP4 padding patch)
+
+  # Prefill optimization
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 4096     # Safe prefill chunk size
+  max_num_seqs: 2                  # Allow up to 2 concurrent sequences
+
+  # Tool calling and reasoning
+  tool_call_parser: "qwen3_coder"  # XML format parser
+  reasoning_parser: "super_v3"     # Reasoning extractor
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_MLA_DISABLE: "1"                             # Bypasses Hopper/SM90 FlashMLA
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual VRAM memory fragmentation
+    NCCL_P2P_DISABLE: "0"                             # ENABLE direct PCIe Peer-to-Peer communication (extremely fast on slcx-p7960!)
+    NCCL_BUFFSIZE: "2097152"                          # Large 2MB communication buffers to accelerate PCIe sync
+    NCCL_IB_DISABLE: "1"                                # Disable InfiniBand explicitly
+    NCCL_SHM_DISABLE: "0"                               # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"                    # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    VLLM_USE_V1: "0"                                    # Disable V1 for stable execution

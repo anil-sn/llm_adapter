@@ -258,28 +258,69 @@ class _IdDeduplicationContext:
 _ID_CHARS = string.ascii_letters + string.digits
 
 
+def _sanitize_tool_id_for_mistral(tool_id: str) -> str:
+    """
+    Sanitize tool ID to meet Mistral's strict validation rules.
+
+    Mistral requires:
+    - Exactly 9 characters
+    - Only a-z, A-Z, 0-9 (no underscores, no hyphens)
+
+    Strategy:
+    - Remove all non-alphanumeric characters
+    - Hash if needed to get stable 9-char ID
+    - Preserve enough entropy to avoid collisions
+
+    Examples:
+        ll_Grep_0     -> llGrep0AB  (remove _, pad to 9)
+        toolu_abc123  -> toolabc1   (remove _, truncate to 9)
+        call_xyz      -> callxyz1   (remove _, pad to 9)
+    """
+    # Remove all non-alphanumeric characters
+    alphanumeric_only = ''.join(c for c in tool_id if c.isalnum())
+
+    if len(alphanumeric_only) == 9:
+        return alphanumeric_only
+    elif len(alphanumeric_only) > 9:
+        # Truncate to 9 chars
+        return alphanumeric_only[:9]
+    else:
+        # Pad with deterministic hash suffix to reach 9 chars
+        # Use simple hash to maintain stability across calls
+        hash_suffix = str(abs(hash(tool_id)) % 10**(9 - len(alphanumeric_only)))
+        # Pad hash_suffix with leading zeros if needed
+        hash_suffix = hash_suffix.zfill(9 - len(alphanumeric_only))
+        return alphanumeric_only + hash_suffix
+
+
 def _deduplicate_tool_id(tool_id: str, ctx: _IdDeduplicationContext) -> str:
     """Deduplicate tool ID for OpenAI (unique per request).
 
     When a duplicate ID is detected, generates a new random ID (keeping
     the first 8 chars of the original if long enough) and records the
     mapping so that later tool_result messages can find the correct ID.
-    """
-    id_to_use = tool_id
 
-    if tool_id in ctx.seen_ids:
-        orig_len = len(tool_id)
-        if orig_len > 11:
-            id_to_use = tool_id[:8] + "".join(
-                secrets.choice(_ID_CHARS) for _ in range(orig_len - 8)
-            )
-        else:
-            id_to_use = "".join(
-                secrets.choice(_ID_CHARS) for _ in range(orig_len)
-            )
+    CRITICAL FIX: Sanitizes tool IDs for Mistral's strict validation:
+    - Removes underscores and non-alphanumeric chars
+    - Ensures exactly 9 characters
+    - Maintains deduplication logic
+    """
+    # Step 1: Sanitize for Mistral (9 chars, alphanumeric only)
+    sanitized_id = _sanitize_tool_id_for_mistral(tool_id)
+
+    # Step 2: Deduplicate if we've seen this sanitized ID before
+    id_to_use = sanitized_id
+
+    if sanitized_id in ctx.seen_ids:
+        # Generate new 9-char random ID to avoid collision
+        id_to_use = "".join(secrets.choice(_ID_CHARS) for _ in range(9))
+        # Ensure uniqueness
+        while id_to_use in ctx.seen_ids:
+            id_to_use = "".join(secrets.choice(_ID_CHARS) for _ in range(9))
 
     ctx.seen_ids.add(id_to_use)
 
+    # Step 3: Record mapping from original tool_id to sanitized version
     if tool_id not in ctx.id_mappings:
         ctx.id_mappings[tool_id] = []
     ctx.id_mappings[tool_id].append(id_to_use)

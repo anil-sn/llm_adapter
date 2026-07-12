@@ -18,8 +18,8 @@ class OpenAIAdapter(BaseAdapter):
     """
     Standard OpenAI passthrough for vLLM and other compatible backends.
     """
-    def __init__(self, max_context: int = 32768):
-        self.max_context = max_context
+    def __init__(self, max_context: int = 32768, default_max_tokens: int = 4096, **kwargs):
+        super().__init__(max_context=max_context, default_max_tokens=default_max_tokens)
 
     def build_request(self, body: dict) -> dict:
         return self.clamp_max_tokens(body, self.max_context)

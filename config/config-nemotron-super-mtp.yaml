@@ -1,0 +1,73 @@
+# LLM Orchestrator - Nemotron Super NVFP4 Configuration
+# Model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+# Inherits from: config.yaml, config-adapter.yaml
+# 120B params (12B active) with NVFP4 4-bit quantization + MTP enabled
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+  served_model_name: "nemotron-super"
+  tokenizer_mode: "auto"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.90     # Higher util for NVFP4 efficiency
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASHINFER"  # Required for FP4 MoE efficiency with MTP
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings (MTP-limited by VRAM)
+  max_model_len: 106000            # 106K context (FP16 KV cache - FP8 incompatible with arch)
+
+  # Batch settings (reduced due to MTP memory overhead)
+  max_num_batched_tokens: 8192     # Lower batch for MTP stability
+  max_num_seqs: 64                 # Reduced for MTP
+
+  # KV cache optimization (FP16 - FP8/INT8 incompatible with FLASHINFER/MTP)
+  kv_cache_dtype: "auto"           # auto = FP16 (FP8 has alignment issues with 8 KV heads)
+
+  # MTP Configuration (Multi-Token Prediction)
+  # NOTE: MTP adds ~20-25GB per GPU but improves throughput by 1.3-1.5×
+  # To DISABLE MTP and save VRAM, set num_nextn_predict_layers: 0
+  hf_overrides:
+    num_nextn_predict_layers: 1    # 1 = MTP enabled (default)
+
+  # Reasoning settings
+  reasoning_parser: "super_v3"     # Nemotron Super V3 parser
+  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # XML format parser
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_FLASHINFER_MOE_FP4: "1"       # Required for MoE FP4 support
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_USE_V1: "1"                       # Use V1 API (better NVFP4 support)
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - NVFP4 quantization: 3.5× smaller than FP16, 1.8× smaller than FP8
+# - MoE architecture: 512 experts per layer, 12B active params per token
+# - MTP overhead: ~20-25GB per GPU (80-100GB total on 4 GPUs)
+# - MTP limits max context to 106K tokens (22GB MTP overhead + 15GB weights)
+# - W4A16 mode on Ada GPUs (W4A4 requires Blackwell SM100)
+# - Total VRAM with MTP+FP16: ~35-40GB per GPU (140-160GB total)
+# - FP8/INT8 KV cache incompatible:
+#   * FP8 with FLASHINFER: alignment error (size_n=672 not divisible by 64)
+#   * INT8 requires TRITON_ATTN: may not work with NVFP4 + MTP
+# - Alternatives:
+#   * config-nemotron-super-no-mtp.yaml: No MTP → 1M context (INT8 KV + TRITON)
+#   * RoPE/YaRN scaling: Does NOT reduce KV cache memory requirements
+# - Maximum context with MTP: 106K (FP16 KV cache, hardware VRAM limited)

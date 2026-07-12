@@ -1,0 +1,54 @@
+--- a/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4.py
++++ b/vllm/model_executor/layers/quantization/utils/marlin_utils_fp4.py
+@@ -323,6 +323,15 @@ def prepare_nvfp4_moe_layer_for_marlin(
+
+     # WEIGHT
+     # Repack weights to marlin format
++    # Marlin kernel requires dimensions divisible by 64
++    # Pad size_n if needed (similar to FP8 marlin_utils)
++    TILE_SIZE = 64
++
++    def pad_to_tile(size):
++        """Pad dimension to next multiple of TILE_SIZE"""
++        if size % TILE_SIZE == 0:
++            return size, 0
++        return ((size + TILE_SIZE - 1) // TILE_SIZE) * TILE_SIZE, ((size + TILE_SIZE - 1) // TILE_SIZE) * TILE_SIZE - size
++
+     def repack_weight(weight: torch.Tensor, name: str) -> torch.Tensor:
+         tensor_list = []
+         num_shards = 2 if is_act_and_mul else 1
+@@ -330,14 +339,31 @@ def prepare_nvfp4_moe_layer_for_marlin(
+             size_n, size_k = N * num_shards, K
+         else:
+             size_n, size_k = K, N
++
++        # Pad size_n to tile boundary if needed
++        orig_size_n = size_n
++        size_n_padded, padding = pad_to_tile(size_n)
++
++        if padding > 0:
++            # Need to pad the weight tensor
++            # weight shape: (E, size_n, size_k // 2)
++            E = weight.shape[0]
++            pad_shape = (E, padding, weight.shape[2])
++            pad_tensor = torch.zeros(pad_shape, dtype=weight.dtype, device=weight.device)
++            weight_padded = torch.cat([weight, pad_tensor], dim=1)
++        else:
++            weight_padded = weight
+
+-        assert weight.shape == (E, size_n, size_k // 2)
++        assert weight_padded.shape[0] == E
++        assert weight_padded.shape[1] == size_n_padded
++        assert weight_padded.shape[2] == size_k // 2
+
+         for i in range(E):
+-            qweight = weight[i].view(torch.int32).T.contiguous()
++            qweight = weight_padded[i].view(torch.int32).T.contiguous()
+
+             marlin_qweight = ops.gptq_marlin_repack(
+                 b_q_weight=qweight,
+                 perm=perm,
+                 size_k=size_k,
+-                size_n=size_n,
++                size_n=size_n_padded,
+                 num_bits=4,

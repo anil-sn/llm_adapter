@@ -1,0 +1,65 @@
+# LLM Orchestrator - DeepSeek V4 Flash Safe Mode Configuration (16K Context)
+# Model: nvidia/DeepSeek-V4-Flash-NVFP4 (284B MoE, 13B Active)
+# Quantization: NVFP4 (weights) / BF16 (activations) + Standard KV Cache
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "nvidia/DeepSeek-V4-Flash-NVFP4"
+  served_model_name: "oracle-v4-flash"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "bf16"
+  engine_preference: "v0"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "bfloat16"                # Force stable BF16 execution
+  gpu_memory_utilization: 0.90     # Conservative 90% allocation for safe headroom
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASH_ATTN"  # Use stable FlashAttention v2
+  disable_custom_all_reduce: true  # CRITICAL: Disables custom CUDA kernel reductions, preventing PCIe bus saturation
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings - Right-sized 16K tokens
+  max_model_len: 16384
+
+  # KV cache optimization
+  kv_cache_dtype: "auto"           # Disable FP8 KV cache to avoid Triton E8M0 KeyError
+
+  # MoE Settings
+  enable_expert_parallel: true     # Required for 284B MoE routing
+  moe_backend: "triton"            # Force Triton MoE backend to strictly bypass SM90-only DeepGEMM/DeepEP paths
+
+  # Prefill optimization
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 4096     # Standard safe prefill chunk size
+  max_num_seqs: 2                  # Allow up to 2 concurrent sequences
+
+  # Tool calling and reasoning
+  tool_call_parser: "qwen3_coder"  # XML format parser
+  reasoning_parser: "super_v3"     # Reasoning extractor
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"
+    VLLM_MLA_DISABLE: "1"                             # CRITICAL: Bypasses Hopper/SM90 FlashMLA and forces SM89 standard fallbacks
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual VRAM memory fragmentation
+    NCCL_P2P_DISABLE: "1"                             # CRITICAL: Prevents driver deadlocks on non-NVLink PCIe systems
+    NCCL_IB_DISABLE: "1"                                # Disable InfiniBand explicitly
+    NCCL_SHM_DISABLE: "0"                               # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"                    # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    VLLM_USE_V1: "0"                                    # Disable V1 for stable execution
+

@@ -17,8 +17,8 @@ __version__ = "2.0.0"
 __author__ = "asrirang"
 
 # Avoid circular imports - don't import submodules here
-# Use: from llm_adapter.adapters import ClaudeAdapterV2
-# Not: from llm_adapter import ClaudeAdapterV2
+# Use: from llm_adapter.adapters import ClaudeAdapter
+# Not: from llm_adapter import ClaudeAdapter
 
 __all__ = [
     "__version__",

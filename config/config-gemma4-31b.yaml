@@ -1,129 +1,74 @@
-# LLM Orchestrator - Gemma 4 31B Configuration (512K CONTEXT)
-# AWQ 4-bit quantization + FP8 KV cache
-# 512K token context (2× native 256K)
+# LLM Orchestrator - Google Gemma 4 31B NVFP4 Configuration
+# Model: nvidia/Gemma-4-31B-IT-NVFP4
+# Quantization: NVFP4 (weights) / BF16 (activations) + FP8 KV Cache
+# Architecture: Dense Transformer (31B parameters, 60 layers)
+# Context: 256K native context window
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology)
 # Inherits from: config.yaml, config-adapter.yaml
 
 # ============================================================================
 # MODEL IDENTITY
 # ============================================================================
 model:
-  id: "cyankiwi/gemma-4-31B-it-AWQ-4bit"
-  served_model_name: "gemma-4-31b"
+  id: "nvidia/Gemma-4-31B-IT-NVFP4"
+  served_model_name: "gemma4-31b"
   tokenizer_mode: "auto"
-  trust_remote_code: true          # Required for Gemma 4
-
-# ============================================================================
-# QUANTIZATION STRATEGY
-# ============================================================================
-# Model Weights: AWQ 4-bit (auto-detected from model config)
-# KV Cache: FP8 (specified below - critical for 512K context memory efficiency)
-# Combined: ~75% weight reduction + ~50% KV cache reduction vs FP16
+  trust_remote_code: true          # Required for native Gemma 4 custom operators
+  precision_profile: "nvfp4"
+  engine_preference: "v0"
 
 # ============================================================================
 # HARDWARE OVERRIDES
 # ============================================================================
 hardware:
-  dtype: "auto"                    # AWQ supports FP16 and BF16
-  gpu_memory_utilization: 0.89     # Recommended production value for 512K context
-  tensor_parallel_size: 4          # Use all 4 GPUs
-  attention_backend: "TRITON_ATTN" # Required for fp8 kv_cache (FLASH_ATTN doesn't support fp8)
-
-  # AWQ quantization works on Ada (SM 8.9) - FP8 KV cache supported!
+  dtype: "auto"                    # Let vLLM select optimal precision for NVFP4 loading
+  gpu_memory_utilization: 0.90     # Safely leaves VRAM headroom for multi-sequence cache blocks
+  tensor_parallel_size: 4          # Distribute over all 4 RTX 6000 Ada GPUs
+  attention_backend: "TRITON_ATTN"  # Required for FP8 KV cache and Marlin FP4 compatibility
+  disable_custom_all_reduce: true  # CRITICAL: Disables custom CUDA kernel reductions, preventing PCIe bus saturation
 
 # ============================================================================
 # INFERENCE SETTINGS
 # ============================================================================
 inference:
-  # Extended context window - 512K tokens (2× native 256K via YaRN)
-  max_model_len: 524288            # 512K tokens
+  # Extended context window - 1M tokens (4× native 256K via YaRN)
+  max_model_len: 1048576
 
-  # YaRN RoPE Scaling for 512K context
+  # YaRN RoPE Scaling for 1M context
   rope_scaling:
     type: "yarn"
-    factor: 2.0                    # 2× scaling from 256K native
+    factor: 4.0                    # 4× scaling from 256K native
     original_max_position_embeddings: 262144
 
-  # Memory-efficient features (CRITICAL for 512K)
-  enable_prefix_caching: true      # Reuses KV cache for repeated prefixes
-  enable_chunked_prefill: true     # Processes long prompts in chunks
-
-  # Batch settings - Optimized for 512K context (31B dense, 60 layers)
-  max_num_batched_tokens: 16384    # Conservative for memory
-  max_num_seqs: 2                  # 2 concurrent requests
-
   # KV cache optimization
-  kv_cache_dtype: "fp8"            # FP8 KV cache for memory efficiency
+  kv_cache_dtype: "fp8"            # FP8 KV Cache to optimize context memory capacity
 
-  # Tool calling
-  enable_auto_tool_choice: true    # Enable automatic tool choice
-  tool_call_parser: "gemma4"       # Gemma 4 native function calling parser
+  # Prefill and execution optimization
+  enable_chunked_prefill: true     # Processes long inputs in chunks to prevent VRAM spikes
+  enable_prefix_caching: true      # Reuses KV cache for multi-turn conversations
+  max_num_batched_tokens: 16384    # Optimized prefill batch size
+  max_num_seqs: 4                  # Highly concurrent multi-turn agent streams
 
-  # Output settings (conservative for 512K context)
-  default_max_tokens: 16384        # Default output length
-  max_output_tokens: 65536         # Max output for 512K context (64K)
+  # Tool calling and reasoning
+  enable_auto_tool_choice: true
+  tool_call_parser: "gemma4"       # Native Gemma 4 tool calling schema
+  reasoning_parser: "gemma4"       # Native Gemma 4 reasoning/thinking parser
+  enable_thinking: false           # Dynamic client-controlled reasoning (disabled by default)
+
+  # Output settings
+  default_max_tokens: 16384
+  max_output_tokens: 65536
 
 # ============================================================================
-# MEMORY BUDGET ESTIMATE - 512K CONTEXT
+# VLLM ENVIRONMENT
 # ============================================================================
-#
-# Hardware: 4× RTX 6000 Ada (49GB each) = 196GB total
-#
-# Model Weights (AWQ 4-bit):
-#   - Gemma 4 31B quantized: ~18-20GB across 4 GPUs (~5-6GB per GPU)
-#
-# KV Cache (512K context, FP8, 2 sequences):
-#   - Per sequence (512K tokens, FP8): ~60-70GB
-#   - With max_num_seqs=2: ~120-140GB total
-#   - BUT: With chunked prefill and prefix caching, actual usage is lower
-#   - Practical usage with 2 seqs: ~70-100GB
-#   - Distributed across 4 GPUs: ~18-25GB per GPU
-#
-# Total Memory Usage (512K context, 2 sequences):
-#   - Model weights: ~20GB
-#   - KV cache (512K tokens, 2 seqs): ~70-100GB
-#   - Activations & overhead: ~15-25GB
-#   - Total: ~105-145GB
-#   - Headroom: ~51-91GB (26-46% free)
-#
-# CONCLUSION: 512K context is FEASIBLE with 31B model:
-#   - AWQ 4-bit keeps weights small (~5-6GB per GPU)
-#   - Can support 2 concurrent requests
-#   - FP8 KV cache is critical for memory efficiency
-#   - More headroom than Qwen 1M config
-#
-# PROGRESSIVE TESTING PLAN:
-# - Start with 128K (native), test stability
-# - Scale to 256K (native max), verify quality
-# - Scale to 384K, monitor memory with 2 concurrent requests
-# - Finally attempt 512K if stable
-#
-# ============================================================================
-# DEPLOYMENT NOTES - 512K CONTEXT
-# ============================================================================
-#
-# ✅ AWQ quantization: Compatible with Ada (SM 8.9)
-# ✅ FP8 KV cache: Supported on Ada GPUs
-# ✅ Standard CUDA kernels work on Ada architecture
-# ✅ Excellent memory efficiency with 4-bit weights + FP8 KV cache
-# ✅ 31B model allows 2 concurrent requests with comfortable headroom
-#
-# ⚠️ CONTEXT LIMITATIONS:
-#   - Gemma 4 31B native context: 256K tokens
-#   - 512K is 2× native — no documented RoPE scaling beyond 256K
-#   - Quality may degrade beyond native context
-#   - Test thoroughly at each scale step
-#
-# ⚠️ GEMMA 4 SPECIFICS:
-#   - Hybrid attention: sliding window (1024 tokens) + global attention layers
-#   - Proportional RoPE (p-RoPE) for long contexts
-#   - Unified Keys and Values in global layers for memory optimization
-#   - Thinking mode: trigger with <|think|> token in system prompt
-#   - Multimodal: text + image (vision encoder ~550M params)
-#
-# 🔧 TUNING OPTIONS:
-#   - If OOM with 2 seqs: Set max_num_seqs=1
-#   - If OOM: Reduce to 256K (native) or 384K
-#   - If stable with headroom: Can try max_num_seqs=3
-#   - Monitor: watch -n 1 nvidia-smi
-#
-# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual VRAM memory fragmentation
+    NCCL_P2P_DISABLE: "1"           # CRITICAL: Prevents driver deadlocks on non-NVLink PCIe systems
+    NCCL_IB_DISABLE: "1"            # Disable InfiniBand explicitly
+    NCCL_SHM_DISABLE: "0"           # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1" # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    VLLM_USE_V1: "0"                 # Disable V1 for stable legacy V0 execution on SM89

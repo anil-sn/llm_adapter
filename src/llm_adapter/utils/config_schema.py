@@ -109,10 +109,16 @@ class HardwareConfig(BaseModel):
     @classmethod
     def validate_gpu_memory(cls, v: float) -> float:
         """Validate GPU memory utilization is reasonable."""
-        if v > 0.95:
+        if v > 0.99:
             raise ValueError(
-                f"gpu_memory_utilization={v} is too high (>0.95). "
+                f"gpu_memory_utilization={v} is too high (>0.99). "
                 "Recommended: 0.75-0.85 for stability."
+            )
+        if v > 0.95:
+            print(
+                f"WARNING: gpu_memory_utilization={v} is extremely high (>0.95). "
+                "This leaves very little headroom for PyTorch and system memory, "
+                "which may cause immediate CUDA Out-Of-Memory (OOM) errors during startup."
             )
         if v < 0.5:
             raise ValueError(
@@ -135,6 +141,14 @@ class ModelConfig(BaseModel):
         default=False,
         description="Trust remote code for model loading"
     )
+    precision_profile: Optional[Literal["fp16", "bf16", "fp8", "nvfp4"]] = Field(
+        default=None,
+        description="Model precision quantization class"
+    )
+    engine_preference: Optional[Literal["v0", "v1"]] = Field(
+        default=None,
+        description="Model execution engine preference"
+    )
 
     @field_validator("id")
     @classmethod
@@ -151,13 +165,25 @@ class ModelConfig(BaseModel):
 
 class RoPEScalingConfig(BaseModel):
     """RoPE scaling configuration for extended context."""
-    type: Literal["yarn", "linear", "dynamic"] = Field(..., description="RoPE scaling type")
+    type: Optional[Literal["yarn", "linear", "dynamic"]] = Field(default=None, description="RoPE scaling type")
+    rope_type: Optional[Literal["yarn", "linear", "dynamic"]] = Field(default=None, description="RoPE scaling type (newer schema)")
     factor: float = Field(..., gt=1.0, le=8.0, description="Scaling factor")
     original_max_position_embeddings: int = Field(
         ...,
         gt=0,
         description="Original max position embeddings"
     )
+
+    @model_validator(mode='after')
+    def validate_rope_type(self) -> 'RoPEScalingConfig':
+        """Ensure either type or rope_type is set, and sync them for maximum compatibility."""
+        if not self.type and not self.rope_type:
+            raise ValueError("Either 'type' or 'rope_type' must be provided in rope_scaling")
+        if self.type and not self.rope_type:
+            self.rope_type = self.type
+        elif self.rope_type and not self.type:
+            self.type = self.rope_type
+        return self
 
     @field_validator("factor")
     @classmethod
@@ -167,6 +193,41 @@ class RoPEScalingConfig(BaseModel):
             print(
                 f"WARNING: RoPE scaling factor={v} is very aggressive (>4.0). "
                 "This may impact quality. Recommended: 1.5-2.0 for YaRN."
+            )
+        return v
+
+
+class SpeculativeDecodingConfig(BaseModel):
+    """Speculative decoding configuration."""
+    method: Literal["eagle", "eagle3", "medusa", "ngram", "draft_model", "mtp", "qwen3_next_mtp"] = Field(
+        ...,
+        description="Speculative decoding method"
+    )
+    draft_model: Optional[str] = Field(
+        default=None,
+        description="Draft model ID (e.g., mistralai/Mistral-Medium-3.5-128B-EAGLE). Not required for MTP methods."
+    )
+    num_speculative_tokens: int = Field(
+        default=5,
+        ge=1,
+        le=10,
+        description="Number of speculative tokens to generate ahead"
+    )
+    draft_tensor_parallel_size: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=8,
+        description="Tensor parallel size for draft model (defaults to base model TP size)"
+    )
+
+    @field_validator("num_speculative_tokens")
+    @classmethod
+    def validate_num_tokens(cls, v: int) -> int:
+        """Validate speculative token count is reasonable."""
+        if v > 7:
+            print(
+                f"WARNING: num_speculative_tokens={v} is high (>7). "
+                "This may waste compute if acceptance rate is low. Recommended: 3-5."
             )
         return v
 
@@ -235,6 +296,12 @@ class InferenceConfig(BaseModel):
         description="Tool call parser to use"
     )
 
+    # Multimodal settings
+    limit_mm_per_prompt: Optional[Dict[str, int]] = Field(
+        default=None,
+        description="Limit multimodal inputs per prompt (e.g., {'image': 0} to disable)"
+    )
+
     # Output settings
     default_max_tokens: Optional[int] = Field(
         default=None,
@@ -245,6 +312,12 @@ class InferenceConfig(BaseModel):
         default=None,
         ge=1,
         description="Maximum output tokens"
+    )
+
+    # Performance optimization
+    enforce_eager: bool = Field(
+        default=False,
+        description="Enforce eager execution (disables CUDA graphs)"
     )
 
     @model_validator(mode='after')
@@ -330,11 +403,22 @@ class Config(BaseModel):
     inference: InferenceConfig
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
 
+    # Performance optimization
+    speculative_decoding: Optional[SpeculativeDecodingConfig] = Field(
+        default=None,
+        description="Speculative decoding configuration (EAGLE, Medusa, etc.)"
+    )
+
     # Adapter sections
     model_rules: List[ModelRule] = Field(default_factory=list)
     qwen_adapter: Optional[Dict[str, Any]] = Field(default=None)
     nemotron_adapter: Optional[Dict[str, Any]] = Field(default=None)
     claude_adapter: Optional[Dict[str, Any]] = Field(default=None)
+    gemma_adapter: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Gemma adapter configuration (default_max_tokens, max_output_tokens)"
+    )
+    mistral_adapter: Optional[Dict[str, Any]] = Field(default=None)
     openai_adapter: Optional[Dict[str, Any]] = Field(default=None)
 
     @model_validator(mode='after')

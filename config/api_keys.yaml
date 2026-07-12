@@ -13,6 +13,9 @@ api_keys:
   "EDGE-AI-CLAUDE-THEO": "theo"
   "EDGE-AI-CLAUDE-MOULI": "mouli"
   "EDGE-AI-CLAUDE-SHASH": "shash"
+  "EDGE-AI-CLAUDE-MANOJ": "manoj"
+  "EDGE-AI-CLAUDE-NAGA": "naga"
+  "EDGE-AI-CLAUDE-RAMAN": "raman"
 
   # Localhost development (optional - localhost bypass enabled by default)
   "localhost": "localhost"

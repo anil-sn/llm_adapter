@@ -1,0 +1,83 @@
+# LLM Orchestrator - Nemotron Super NVFP4 Configuration (MTP Disabled)
+# Model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+# Inherits from: config.yaml, config-adapter.yaml
+# 120B params (12B active) with NVFP4 4-bit quantization, MTP disabled to save VRAM
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4"
+  served_model_name: "nemotron-super"
+  tokenizer_mode: "auto"
+
+# ============================================================================
+# HARDWARE OVERRIDES (Marlin FP4 padding fix applied)
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.95     # Higher util - no MTP overhead
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "TRITON_ATTN" # TRITON (Marlin FP4 padding fix applied to vllm)
+
+# ============================================================================
+# INFERENCE OVERRIDES (Minimal changes: FP8 KV + expert parallel)
+# ============================================================================
+inference:
+  # Context settings (Extended with YaRN RoPE scaling)
+  max_model_len: 524288            # 512K context (2× YaRN scaling, FP8 KV cache)
+
+  # Batch settings
+  max_num_batched_tokens: 16384    # Standard batch size
+  max_num_seqs: 128                # Higher concurrency
+
+  # Features
+  enable_prefix_caching: true      # Reuses prefix KV cache for 0ms repeated prompt latency
+  enable_chunked_prefill: true     # Interleaves prefill and decode to stabilize latency
+
+  # KV cache optimization (FP8 instead of INT8 for testing)
+  kv_cache_dtype: "fp8"            # FP8 KV cache (NVIDIA official)
+
+  # MoE settings (NVIDIA official - may fix 672/64 Marlin issue)
+  enable_expert_parallel: true     # Required for Nemotron Super MoE
+
+  # MTP Configuration - DISABLED
+  hf_overrides:
+    num_nextn_predict_layers: 0    # 0 = MTP disabled
+
+  # RoPE scaling configuration (extends context from 256K to 512K)
+  rope_scaling:
+    rope_type: "yarn"              # YaRN scaling method (vLLM expects rope_type not type)
+    factor: 2.0                    # 2× scaling from 256K native
+    original_max_position_embeddings: 262144
+
+  # Reasoning settings
+  reasoning_parser: "super_v3"     # Nemotron Super V3 parser
+  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"
+
+  # Tool calling
+  tool_call_parser: "qwen3_coder"  # XML format parser
+
+# ============================================================================
+# VLLM ENVIRONMENT (Minimal - no FLASHINFER for now)
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"  # Keep original
+    VLLM_USE_V1: "1"                       # Use V1 API (better NVFP4 support)
+    
+    # NCCL Multi-GPU PCIe P2P Tuning (Benchmarked 16.9 GB/s)
+    NCCL_P2P_DISABLE: "0"
+    CUDA_DEVICE_MAX_CONNECTIONS: "1"
+    NCCL_IB_DISABLE: "1"
+    NCCL_NET_GDR_LEVEL: "5"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - NVFP4 quantization: 3.5× smaller than FP16, 1.8× smaller than FP8
+# - MoE architecture: 512 experts per layer, 12B active params per token
+# - MTP disabled saves: ~80-100GB total VRAM across 4 GPUs
+# - W4A16 mode on Ada GPUs (W4A4 requires Blackwell SM100)
+# - Total VRAM without MTP: ~15-20GB per GPU (60-80GB total)
+# - Trade-off: Slightly lower throughput vs MTP, but 2× longer context support
+# - Using default NVFP4 kernel (auto-detect)

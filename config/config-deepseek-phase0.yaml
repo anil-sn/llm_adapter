@@ -1,0 +1,55 @@
+# LLM Orchestrator - DeepSeek V4 Flash Phase 0 FP8 Configuration (PCI-e & SM8.9 Optimized)
+# Model: deepseek-ai/DeepSeek-V4-Flash (284B MoE, 13B Active)
+# Context: 524,288 tokens (0.5M) with Compressed Sparse Attention (CSA)
+# Quantization: FP8 (Native high-performance FP8 with SwiGLU clamp on Ada)
+# Hardware: 4× RTX 6000 Ada (48GB each, PCIe topology, no NVLink)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "deepseek-ai/DeepSeek-V4-Flash"
+  served_model_name: "deepseek-v4-flash"
+  tokenizer_mode: "auto"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  gpu_memory_utilization: 0.90     # Lowered to 0.90 for optimal stability and memory safety
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASH_ATTN"  # FlashAttention is fully compiled and supported on PyTorch 2.12 + SM8.9
+
+# ============================================================================
+# INFERENCE OVERRIDES
+# ============================================================================
+inference:
+  # Context settings
+  max_model_len: 524288            # 512K (0.5M) context window
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache (critical for MoE scaling)
+
+  # MoE Settings
+  enable_expert_parallel: true     # Required for 284B MoE routing
+  moe_backend: "auto"              # Let vLLM select standard FP8 DeepGEMM/FlashInfer kernels
+
+  # Prefill optimization (prevents CUDA timeouts during massive prompt evaluations)
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 8192     # Lowered from 32768 to 8192 to prevent TTFT spikes and memory pressure
+  max_num_seqs: 3                  # Lowered to 3 concurrent sequences to optimize stability at 512K context
+
+  # Tool calling and reasoning
+  tool_call_parser: "qwen3_coder"  # XML format parser
+  reasoning_parser: "super_v3"     # Reasoning extractor
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"              # Highly optimized FP8 backend
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Aggressively combat PyTorch memory fragmentation
+    NCCL_P2P_DISABLE: "1"                             # CRITICAL: Disable NCCL P2P to prevent deadlocks on PCIe-only systems
+    VLLM_FP8_ACTIVATION: "1"                          # Force native FP8 execution for maximum throughput

@@ -1,0 +1,71 @@
+# LLM Orchestrator - Meta Llama 4 Scout Configuration
+# Model: RedHatAI/Llama-4-Scout-17B-16E-Instruct-NVFP4 (Default)
+# Option: nvidia/Llama-4-Scout-17B-16E-Instruct-FP8 (Switchable)
+# Architecture: 109B MoE (17B Active per token, 16 Experts)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  # Option 1 (Default): 4-bit weights for maximum context headroom (~54.5 GB total weights)
+  id: "RedHatAI/Llama-4-Scout-17B-16E-Instruct-NVFP4"
+  
+  # Option 2: 8-bit weights for maximum precision (~109 GB total weights)
+  # id: "nvidia/Llama-4-Scout-17B-16E-Instruct-FP8"
+  
+  served_model_name: "llama4-scout"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "nvfp4"      # Set to 'fp8' if switching to Option 2
+  engine_preference: "v0"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.95     # Squeezed to the maximum Pydantic limit for maximum KV capacity
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each, PCIe topology)
+  attention_backend: "TRITON_ATTN" # Triton backend for stable FP8 KV Cache support
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Context settings - Calibrated to 1,100,000 (1.1M) tokens at 0.95 utilization
+  max_model_len: 1100000
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # FP8 KV cache to double context capacity
+
+  # MoE Settings
+  enable_expert_parallel: true     # Required for 109B MoE routing across GPUs
+  moe_backend: "auto"
+
+  # Prefill optimization
+  enable_chunked_prefill: true
+  enable_prefix_caching: true      # Reuses KV cache for multi-turn prompts
+  max_num_batched_tokens: 16384    # Optimal linear layer throughput
+  max_num_seqs: 1                  # Locked to 1 sequence for extreme single-agent prompts
+
+  # Tool calling and reasoning
+  tool_call_parser: "openai"       # Llama 4 uses standard OpenAI compatible schemas
+  
+  # Output settings
+  default_max_tokens: 16384        # Standard generation limit
+  max_output_tokens: 65536         # High generation limit for coding/reasoning
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"
+    VLLM_USE_V1: "0"                 # Disable V1 for stable NVFP4 execution on Ada Lovelace
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True" # Combats virtual VRAM memory fragmentation
+    NCCL_P2P_DISABLE: "1"           # CRITICAL: Prevents driver deadlocks on non-NVLink PCIe systems
+    NCCL_IB_DISABLE: "1"            # Disable InfiniBand explicitly
+    NCCL_SHM_DISABLE: "0"           # Explicitly enable system shared memory
+    CUDA_DEVICE_MAX_CONNECTIONS: "1" # Stabilize multi-GPU execution pipelines
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"

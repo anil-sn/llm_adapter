@@ -45,10 +45,9 @@ class QwenAdapter(NemotronAdapter):
         max_output_tokens: int = 81920,
         **kwargs
     ):
-        super().__init__(max_context=max_context)
+        super().__init__(max_context=max_context, default_max_tokens=default_max_tokens)
 
         self.sampling_profiles = sampling_profiles or self._default_profiles()
-        self.default_max_tokens = default_max_tokens
         self.max_output_tokens = max_output_tokens
 
         logger.info(

@@ -14,6 +14,10 @@ import sys
 import shutil
 import argparse
 from pathlib import Path
+
+# Enable hf-transfer for parallel multi-threaded downloading BEFORE importing huggingface_hub
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
 from huggingface_hub import snapshot_download
 
 # Add project root to path
@@ -45,9 +49,6 @@ def download_model(model_id, local_dir=None, token=None):
     """
     Downloads the model using hf-transfer for maximum speed.
     """
-    # Enable hf-transfer for parallel multi-threaded downloading
-    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-
     print(f"--- Starting Download ---")
     print(f"Model: {model_id}")
     print(f"Engine: hf-transfer (Multi-threaded, 16 workers)")

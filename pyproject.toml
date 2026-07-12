@@ -27,17 +27,23 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
+    "cmake>=4.3.2",
     "fastapi>=0.135.3",
     "hf-transfer>=0.1.9",
     "httpx>=0.28.1",
     "huggingface-hub>=0.36.2",
+    "ninja>=1.11.1",
+    "nvidia-nccl-cu12>=2.30.7",
+    "packaging>=24.0",
     "pyyaml>=6.0.3",
-    "transformers>=4.56.0",         # vLLM 0.20+ supports transformers 5.0+
+    "setuptools-rust>=1.12.1",
+    "setuptools-scm>=10.0.5",
+    "torch==2.11.0",
+    "transformers>=4.56.0",
     "uvicorn>=0.44.0",
-    "vllm==0.20.1",                 # Latest stable - improved fp8 support
-    # NOTE: PyTorch 2.10.0+cu129 installed via setup script (see scripts/setup_venv.sh)
-    # vLLM 0.20.1 - Enhanced fp8 KV cache and TurboQuant 2-bit support
-    # Driver: 575.64.03 (CUDA 12.9)
+    "vllm>=0.24.0",
+    "wheel>=0.47.0",
+    "whichllm",
 ]
 
 [project.optional-dependencies]
@@ -78,7 +84,15 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.uv]
-# PyTorch 2.10.0+cu129 installed via setup script (scripts/setup_venv.sh)
-# vLLM 0.20.1 - Latest stable with enhanced fp8 and TurboQuant support
-# CUDA Toolkit 12.4 required for FlashAttention JIT compilation (nvcc)
-# Compatible with NVIDIA Driver 575.64.03 (CUDA 12.9 support)
+# vLLM v0.24.0 compiled from source (v0.24.0+cu132 indicates local build)
+# Build command for ultra-fast clean reinstall (using 96 parallel jobs):
+#   uv pip uninstall vllm
+#   rm -rf /tmp/vllm-build-fast && mkdir -p /tmp/vllm-build-fast && cd /tmp/vllm-build-fast
+#   git clone --depth 1 --branch v0.24.0 https://github.com/vllm-project/vllm.git /tmp/vllm-build-fast/vllm
+#   uv pip install setuptools-scm
+#   VLLM_TARGET_DEVICE=cuda TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 9.0" MAX_JOBS=96 uv pip install --no-build-isolation /tmp/vllm-build-fast/vllm
+#
+# System requirements:
+#   - CUDA Toolkit 13.2 at /usr/local/cuda
+#   - cuDNN 9: sudo apt install libcudnn9-cuda-13 libcudnn9-dev-cuda-13
+#   - NVIDIA Driver 595.71.05+ (supports CUDA 13.2)

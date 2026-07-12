@@ -9,8 +9,8 @@ if [ -f .nemo_gateway.pid ]; then
     sleep 2
 fi
 
-# Set environment for Gemma 4 31B model
-export LLM_CONFIG=config/config-gemma4-31b.yaml
+# Set environment for configuration if not already set
+export LLM_CONFIG=${LLM_CONFIG:-"config/config-gemma4-31b.yaml"}
 
 # Start new gateway
 echo "Starting gateway with config: $LLM_CONFIG..."

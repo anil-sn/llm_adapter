@@ -46,22 +46,40 @@ def _map_finish_reason(
     return mapping.get(finish_reason, "end_turn")  # type: ignore
 
 
+def _fix_gemma4_escapes(obj):
+    """Fix Gemma 4 tool argument issues: escaped newlines and extra quotes"""
+    if isinstance(obj, dict):
+        return {k: _fix_gemma4_escapes(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_fix_gemma4_escapes(item) for item in obj]
+    elif isinstance(obj, str):
+        # Fix escaped newlines
+        fixed = obj.replace('\\n', '\n').replace('\\t', '\t').replace('\\r', '\r')
+        # Strip extra quotes
+        if fixed.startswith('"') and fixed.endswith('"') and len(fixed) > 2:
+            fixed = fixed[1:-1]
+        return fixed
+    return obj
+
+
 def _convert_tool_call_to_tool_use(tool_call: OpenAIToolCall) -> AnthropicToolUseBlock:
     """Convert OpenAI tool call to Anthropic tool_use block
     将 OpenAI 工具调用转换为 Anthropic tool_use 块
-    
+
     Args:
         tool_call: OpenAI tool call OpenAI 工具调用
-        
+
     Returns:
         Anthropic tool use block Anthropic 工具使用块
     """
     # Parse arguments JSON 解析参数 JSON
     try:
         input_data = json.loads(tool_call.function["arguments"])
+        # Fix Gemma 4 escaping issues
+        input_data = _fix_gemma4_escapes(input_data)
     except (json.JSONDecodeError, KeyError):
         input_data = {"raw": tool_call.function.get("arguments", "")}
-    
+
     return AnthropicToolUseBlock(
         type="tool_use",
         id=tool_call.id,

@@ -8,17 +8,25 @@
 # Evaluation order: top to bottom (first match wins)
 
 model_rules:
+  # Gemma requests → GemmaAdapter (MUST come before claude!)
+  - pattern: "gemma"
+    adapter: "gemma"
+
   # Claude-style requests → ClaudeAdapter
   - pattern: "claude"
     adapter: "claude"
 
-  # Qwen requests → QwenAdapter
-  - pattern: "qwen"
+  # Qwen, Reasoner and Oracle requests → QwenAdapter (handles thinking and reasoning logs)
+  - pattern: "qwen|reasoner|oracle"
     adapter: "qwen"
 
   # Nemotron/NVIDIA requests → NemotronAdapter
   - pattern: "nemotron|nvidia"
     adapter: "nemotron"
+
+  # Mistral requests → MistralAdapter
+  - pattern: "mistral"
+    adapter: "mistral"
 
   # Fallback → OpenAIAdapter
   - pattern: ".*"
@@ -29,7 +37,9 @@ model_rules:
 # ============================================================================
 
 # Claude Adapter Settings
-claude_adapter: {}  # Empty for now - add Claude-specific settings if needed
+claude_adapter:
+  default_max_tokens: 16384  # Default output tokens (from model config)
+  # This ensures Claude Code gets adequate tokens even when not specified
 
 # Qwen Adapter Settings
 qwen_adapter:
@@ -74,6 +84,24 @@ qwen_adapter:
   # Default settings
   default_max_tokens: 32768
   max_output_tokens: 81920
+
+# Gemma Adapter Settings
+gemma_adapter:
+  default_max_tokens: 16384  # Conservative for 512K context
+  max_output_tokens: 65536   # Max output for 512K context (64K)
+
+# Mistral Adapter Settings
+mistral_adapter:
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+  # Autonomous behavior prompt - encourages the model to proceed without asking for permission
+  autonomous_system_prompt: |
+    You are an autonomous AI assistant. When given tasks:
+    - Proceed with available tools and skills without asking for permission
+    - If a skill is available (e.g., /review), use it immediately
+    - Make decisions and take action rather than presenting options
+    - Only ask for clarification when the task itself is ambiguous, not when the approach is clear
+    - Default to action over discussion
 
 # Nemotron Adapter Settings
 nemotron_adapter: {}  # Empty for now - add Nemotron-specific settings if needed
