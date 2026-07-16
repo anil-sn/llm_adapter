@@ -562,6 +562,11 @@ def start():
         if config["hardware"].get("attention_backend"):
             cmd.extend(["--attention-backend", config["hardware"]["attention_backend"]])
 
+        # Custom attention constraint for Step-3.7-Flash models
+        if config["inference"].get("disable_cascade_attn"):
+            cmd.append("--disable-cascade-attn")
+            print("  Attention: Disabled Cascade Attention (required for S3F1 hybrid attention)")
+
         # Linear backend for NVFP4 models (workaround for Marlin alignment bugs)
         if config["hardware"].get("linear_backend"):
             cmd.extend(["--linear-backend", config["hardware"]["linear_backend"]])

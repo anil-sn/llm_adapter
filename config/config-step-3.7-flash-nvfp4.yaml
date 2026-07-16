@@ -10,7 +10,7 @@
 # ============================================================================
 model:
   id: "stepfun-ai/Step-3.7-Flash-NVFP4"
-  served_model_name: "step-3.7-flash-nvfp4"
+  served_model_name: "dense-3.7-flash-nvfp4"
   tokenizer_mode: "auto"
   trust_remote_code: true
   precision_profile: "nvfp4"
@@ -55,6 +55,14 @@ inference:
   # Tool calling and reasoning
   tool_call_parser: "qwen3_coder"  # XML format parser
   reasoning_parser: "super_v3"     # Reasoning extractor
+
+  # Speculative decoding (Native 3-way MTP)
+  speculative_decoding:
+    method: "mtp"                  # Native Multi-Token Prediction
+    num_speculative_tokens: 3      # Step-3.7-Flash supports exactly 3 speculative heads
+
+  # Attention architecture safety
+  disable_cascade_attn: true       # MANDATORY: Required for S3F1 hybrid attention (sliding window + global)
 
 # ============================================================================
 # VLLM ENVIRONMENT

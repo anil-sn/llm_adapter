@@ -20,8 +20,10 @@ if [ ! -f "$VLLM_MARLIN_FILE" ]; then
     exit 1
 fi
 
-# Check if already patched
-if grep -q "$PATCH_MARKER" "$VLLM_MARLIN_FILE"; then
+# Check if already natively patched by vLLM or has native padding
+if grep -q "def pad_w13" "$VLLM_MARLIN_FILE"; then
+    echo "[Patch] Native FP4 padding already supported in this vLLM version. Skipping Marlin FP4 patch."
+elif grep -q "$PATCH_MARKER" "$VLLM_MARLIN_FILE"; then
     echo "[Patch] Marlin FP4 padding already applied. Skipping."
 else
     echo "[Patch] Backing up original file..."

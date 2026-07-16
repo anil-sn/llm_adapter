@@ -458,7 +458,7 @@ async def proxy_router(request: Request, path: str):
             headers=headers,
             content=body_bytes,
             params=request.query_params,
-            timeout=30.0
+            timeout=None
         )
         return StreamingResponse(
             iter([response.content]),

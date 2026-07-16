@@ -16,9 +16,9 @@ transformers>=4.56.0,<5.0.0
 # Configuration
 pyyaml>=6.0.3
 
-# vLLM (CUDA 12.x compatible)
+# vLLM (CUDA 12.x/13.x compatible)
 # Note: Requires NVIDIA Driver 575.64.03+ with CUDA 12.9 support
-vllm==0.19.0
+vllm==0.25.0
 
 # Optional: Tool calling (web search)
 # Uncomment to enable web search tool
