@@ -1,0 +1,92 @@
+# LLM Orchestrator - poolside/Laguna-S-2.1 NVFP4 Configuration (4-GPU / 1M CONTEXT)
+# Optimized with FLASHINFER, SWA KV-cache skipping, and VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER workaround
+# Quantization: NVFP4 (weights) / BF16 (activations)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "poolside/Laguna-S-2.1-NVFP4"
+  served_model_name: "laguna"
+  trust_remote_code: true
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (Strictly uses all 4 GPUs)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1,2,3"]               # Distributed across all 4 GPUs
+  core_ranges: ["0-111"]
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.85          # Official recipe default: 0.85 allocation for safe headroom
+  tensor_parallel_size: 4               # TP=4
+  attention_backend: "FLASHINFER"       # High-performance GQA and hybrid layers support
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 1048576                # Native stable 1M context window (Aligned with hf_overrides)
+
+  # Complete native 1M RoPE scaling overrides to restore 1M context support
+  hf_overrides:
+    max_position_embeddings: 1048576
+    rope_parameters:
+      full_attention:
+        rope_type: "yarn"
+        factor: 128.0
+        original_max_position_embeddings: 8192
+        rope_theta: 500000.0
+        attention_factor: 1.4852030263919618
+      sliding_attention:
+        rope_type: "default"
+        rope_theta: 10000.0
+        partial_rotary_factor: 1.0
+
+  # KV Cache: bfloat16 for numerical stability on Ada Lovelace (non-Hopper) GPUs
+  kv_cache_dtype: "auto"                 
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true          # Vital to prevent OOM during massive prompt processing
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32                      # Official recipe default: DFlash crashes vLLM at the default of 256. Must be 32.
+
+  # Reasoning control: default-on or client-controlled
+  enable_thinking: true
+  reasoning_parser: "poolside_v1"
+  tool_call_parser: "poolside_v1"       # Keeps tool calling fully enabled!
+
+  # Official recipe generation config override: prevents FP8/FP4 quantization output degradation
+  override_generation_config:
+    temperature: 0.7
+    top_p: 0.95
+
+  # Output settings
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+
+# ============================================================================
+# SPECULATIVE DECODING (Pair with the quantization-matched draft model)
+# ============================================================================
+# speculative_decoding:
+#   method: "dflash"
+#   model: "poolside/Laguna-S-2.1-DFlash-NVFP4"
+#   num_speculative_tokens: 15
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER" # Force FlashInfer for FP8 KV compatibility on Ada Lovelace
+    VLLM_USE_V1: "0"                     # Disable V1 for hybrid attention compatibility
+    VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0" # CRITICAL: Bypasses Ada Lovelace (sm_89) FlashInfer blockscale FP8 GEMM numerical instability

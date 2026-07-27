@@ -19,6 +19,7 @@ from .mistral_adapter import MistralAdapter
 from .nemotron_adapter import NemotronAdapter
 from .openai_adapter import OpenAIAdapter
 from .qwen_adapter import QwenAdapter
+from .laguna_adapter import LagunaAdapter
 
 __all__ = [
     "ClaudeAdapter",
@@ -27,4 +28,5 @@ __all__ = [
     "NemotronAdapter",
     "OpenAIAdapter",
     "QwenAdapter",
+    "LagunaAdapter",
 ]

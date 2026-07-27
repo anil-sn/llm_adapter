@@ -28,6 +28,10 @@ model_rules:
   - pattern: "mistral"
     adapter: "mistral"
 
+  # Laguna requests → LagunaAdapter
+  - pattern: "laguna"
+    adapter: "laguna"
+
   # Fallback → OpenAIAdapter
   - pattern: ".*"
     adapter: "openai"

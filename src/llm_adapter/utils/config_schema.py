@@ -199,7 +199,7 @@ class RoPEScalingConfig(BaseModel):
 
 class SpeculativeDecodingConfig(BaseModel):
     """Speculative decoding configuration."""
-    method: Literal["eagle", "eagle3", "medusa", "ngram", "draft_model", "mtp", "qwen3_next_mtp"] = Field(
+    method: Literal["eagle", "eagle3", "medusa", "ngram", "draft_model", "mtp", "qwen3_next_mtp", "dflash"] = Field(
         ...,
         description="Speculative decoding method"
     )
@@ -210,7 +210,7 @@ class SpeculativeDecodingConfig(BaseModel):
     num_speculative_tokens: int = Field(
         default=5,
         ge=1,
-        le=10,
+        le=32,
         description="Number of speculative tokens to generate ahead"
     )
     draft_tensor_parallel_size: Optional[int] = Field(
@@ -241,13 +241,21 @@ class InferenceConfig(BaseModel):
         le=2_000_000,
         description="Maximum context length in tokens"
     )
-    kv_cache_dtype: Literal["auto", "fp8", "fp16", "bf16"] = Field(
+    kv_cache_dtype: Literal["auto", "fp8", "fp16", "bf16", "bfloat16", "float16"] = Field(
         default="fp8",
         description="KV cache data type"
+    )
+    kv_cache_dtype_skip_layers: Optional[str] = Field(
+        default=None,
+        description="Layers to skip during KV cache quantization (e.g., 'sliding_window')"
     )
     rope_scaling: Optional[RoPEScalingConfig] = Field(
         default=None,
         description="RoPE scaling for extended context"
+    )
+    override_generation_config: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Override generation config JSON for vLLM"
     )
 
     # Batching and sequences
@@ -276,6 +284,10 @@ class InferenceConfig(BaseModel):
     enable_thinking: bool = Field(
         default=False,
         description="Enable thinking/reasoning mode"
+    )
+    default_chat_template_kwargs: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Default chat template keyword arguments"
     )
     reasoning_parser: Optional[ReasoningParser] = Field(
         default=None,

@@ -492,24 +492,27 @@ class ClaudeAdapter(OpenAIAdapter):
                     content = re.sub(r'</think>\s*', '', content)
 
                     # Remove reasoning patterns (aggressive filtering for Nemotron-3)
-                    # Pattern 1: "User asks/said..." at start
-                    content = re.sub(r'^(The user (asks?|said?|wants?|requests?)|User (asks?|said?)):.*?\n\n', '', content, flags=re.DOTALL)
-                    content = re.sub(r'^(The user (asks?|said?|wants?|requests?)|User (asks?|said?)):.*?(?=\n[A-Z0-9])', '', content)
+                    # Restrict to only run on Nemotron models to prevent destroying long-form responses on Laguna-S and Qwen
+                    model_name = resp.get("model", "").lower()
+                    if "nemotron" in model_name:
+                        # Pattern 1: "User asks/said..." at start
+                        content = re.sub(r'^(The user (asks?|said?|wants?|requests?)|User (asks?|said?)):.*?\n\n', '', content, flags=re.DOTALL)
+                        content = re.sub(r'^(The user (asks?|said?|wants?|requests?)|User (asks?|said?)):.*?(?=\n[A-Z0-9])', '', content)
 
-                    # Pattern 2: Remove "We need to..." / "We'll..." / "Let's..." thinking
-                    content = re.sub(r'^We (need to|must|should|will|\'ll).*?\.\s*', '', content, flags=re.MULTILINE)
-                    content = re.sub(r'^Let\'s.*?\.\s*', '', content, flags=re.MULTILINE)
-                    content = re.sub(r'^I (will|\'ll|should|must).*?\.\s*', '', content, flags=re.MULTILINE)
+                        # Pattern 2: Remove "We need to..." / "We'll..." / "Let's..." thinking
+                        content = re.sub(r'^We (need to|must|should|will|\'ll).*?\.\s*', '', content, flags=re.MULTILINE)
+                        content = re.sub(r'^Let\'s.*?\.\s*', '', content, flags=re.MULTILINE)
+                        content = re.sub(r'^I (will|\'ll|should|must).*?\.\s*', '', content, flags=re.MULTILINE)
 
-                    # Pattern 3: If starts with meta-commentary, extract just the answer after double newline
-                    if re.match(r'^(Okay|Hmm|So|The user|User|We|I will|I\'ll|First)', content):
-                        if "\n\n" in content:
-                            parts = content.split("\n\n")
-                            # Get the last substantial part
-                            for part in reversed(parts):
-                                if part.strip() and not re.match(r'^(We|I will|I\'ll|Let\'s|The user)', part):
-                                    content = part.strip()
-                                    break
+                        # Pattern 3: If starts with meta-commentary, extract just the answer after double newline
+                        if re.match(r'^(Okay|Hmm|So|The user|User|We|I will|I\'ll|First)', content):
+                            if "\n\n" in content:
+                                parts = content.split("\n\n")
+                                # Get the last substantial part
+                                for part in reversed(parts):
+                                    if part.strip() and not re.match(r'^(We|I will|I\'ll|Let\'s|The user)', part):
+                                        content = part.strip()
+                                        break
 
                     msg["content"] = content.strip()
 
@@ -693,6 +696,17 @@ class ClaudeAdapter(OpenAIAdapter):
                                         continue
                                 else:
                                     # Still inside think block, skip this entire chunk
+                                    continue
+                            elif "</think>" in text:
+                                # Safeguard: if </think> is in text but in_think_block was False,
+                                # strip it and extract text after it.
+                                import re
+                                match = re.search(r'</think>\s*(.*)', text, re.DOTALL)
+                                if match:
+                                    text = match.group(1).strip()
+                                    if not text:
+                                        continue
+                                else:
                                     continue
 
                         if text:

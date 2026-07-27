@@ -25,6 +25,7 @@ from .openai_adapter import OpenAIAdapter
 from .nemotron_adapter import NemotronAdapter
 from .qwen_adapter import QwenAdapter
 from .mistral_adapter import MistralAdapter
+from .laguna_adapter import LagunaAdapter
 
 from llm_adapter.utils.config_loader import load_config, ConfigError
 
@@ -44,6 +45,7 @@ try:
     CLAUDE_ADAPTER_CONFIG = config.get("claude_adapter", {})
     GEMMA_ADAPTER_CONFIG = config.get("gemma_adapter", {})
     MISTRAL_ADAPTER_CONFIG = config.get("mistral_adapter", {})
+    LAGUNA_ADAPTER_CONFIG = config.get("laguna_adapter", {})
 
     logger.info(f"Adapter factory initialized with {len(RULES)} routing rules")
     logger.info(f"Max context: {MAX_CONTEXT:,} tokens")
@@ -58,6 +60,7 @@ except ConfigError as e:
     CLAUDE_ADAPTER_CONFIG = {}
     GEMMA_ADAPTER_CONFIG = {}
     MISTRAL_ADAPTER_CONFIG = {}
+    LAGUNA_ADAPTER_CONFIG = {}
     logger.warning("Using default adapter configuration")
 
 
@@ -145,6 +148,16 @@ def get_adapter(
             autonomous_system_prompt=autonomous_system_prompt
         )
 
+    elif selected_type == "laguna":
+        default_max_tokens = LAGUNA_ADAPTER_CONFIG.get("default_max_tokens", 16384)
+        max_output_tokens = LAGUNA_ADAPTER_CONFIG.get("max_output_tokens", 65536)
+
+        adapter = LagunaAdapter(
+            max_context=MAX_CONTEXT,
+            default_max_tokens=default_max_tokens,
+            max_output_tokens=max_output_tokens
+        )
+
     else:  # openai or unknown
         adapter = OpenAIAdapter(
             max_context=MAX_CONTEXT
@@ -164,7 +177,7 @@ def reload_config() -> None:
         ConfigError: If config reload fails
     """
     global config, RULES, MAX_CONTEXT
-    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG, GEMMA_ADAPTER_CONFIG, MISTRAL_ADAPTER_CONFIG
+    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG, GEMMA_ADAPTER_CONFIG, MISTRAL_ADAPTER_CONFIG, LAGUNA_ADAPTER_CONFIG
 
     logger.info("Reloading adapter factory configuration...")
 
@@ -178,6 +191,7 @@ def reload_config() -> None:
         CLAUDE_ADAPTER_CONFIG = config.get("claude_adapter", {})
         GEMMA_ADAPTER_CONFIG = config.get("gemma_adapter", {})
         MISTRAL_ADAPTER_CONFIG = config.get("mistral_adapter", {})
+        LAGUNA_ADAPTER_CONFIG = config.get("laguna_adapter", {})
 
         logger.info(f"Configuration reloaded: {len(RULES)} rules, {MAX_CONTEXT:,} max context")
 

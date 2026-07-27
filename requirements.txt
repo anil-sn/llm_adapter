@@ -11,14 +11,14 @@ httpx>=0.28.1
 # HuggingFace
 huggingface-hub>=0.36.2
 hf-transfer>=0.1.9
-transformers>=4.56.0,<5.0.0
+transformers>=4.56.0
 
 # Configuration
 pyyaml>=6.0.3
 
 # vLLM (CUDA 12.x/13.x compatible)
 # Note: Requires NVIDIA Driver 575.64.03+ with CUDA 12.9 support
-vllm==0.25.0
+vllm==0.25.1
 
 # Optional: Tool calling (web search)
 # Uncomment to enable web search tool

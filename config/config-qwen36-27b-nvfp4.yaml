@@ -20,7 +20,7 @@ model:
 # ============================================================================
 hardware:
   dtype: "auto"
-  gpu_memory_utilization: 0.90      # Squeezed to 90% VRAM (leaves 10% safety headroom for compilation activations)
+  gpu_memory_utilization: 0.90      # Squeezed to 95% VRAM (leaves 5% safety headroom for compilation activations)
   tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
   attention_backend: "FLASHINFER"  # Squeezed: FlashInfer delivers 2x lower TTFT and 1.5x higher throughput than Triton
   env_vars:

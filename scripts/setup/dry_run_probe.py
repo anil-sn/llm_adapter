@@ -97,6 +97,9 @@ def run_probe():
         "--tokenizer-mode", config["model"].get("tokenizer_mode", "auto"),
         "--dtype", config["hardware"]["dtype"],
     ]
+
+    if skip_layers := config["inference"].get("kv_cache_dtype_skip_layers"):
+        cmd.extend(["--kv-cache-dtype-skip-layers", skip_layers])
     
     if quant_config := config.get("quantization"):
         if quant_method := quant_config.get("method"):

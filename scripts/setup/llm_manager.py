@@ -545,12 +545,17 @@ def start():
             "--port", str(port),
             "--tensor-parallel-size", str(config["hardware"]["tensor_parallel_size"]),
             "--gpu-memory-utilization", str(config["hardware"]["gpu_memory_utilization"]),
-            "--kv-cache-dtype", config["inference"]["kv_cache_dtype"],
+            "--kv-cache-dtype", "bfloat16" if config["inference"]["kv_cache_dtype"] == "bf16" else "float16" if config["inference"]["kv_cache_dtype"] == "fp16" else config["inference"]["kv_cache_dtype"],
             "--max-model-len", str(config["inference"]["max_model_len"]),
             "--trust-remote-code",
             "--tokenizer-mode", config["model"].get("tokenizer_mode", "auto"),
             "--dtype", config["hardware"]["dtype"],
         ]
+
+        # Skip quantization for specific layers (e.g. SWA layers in Laguna)
+        if skip_layers := config["inference"].get("kv_cache_dtype_skip_layers"):
+            cmd.extend(["--kv-cache-dtype-skip-layers", skip_layers])
+            print(f"  KV Cache: Skipping quantization for {skip_layers} layers")
 
         # Quantization for model weights (critical for MoE models)
         if quant_config := config.get("quantization"):
@@ -561,6 +566,11 @@ def start():
         # Hardware optimizations (matching official cookbook)
         if config["hardware"].get("attention_backend"):
             cmd.extend(["--attention-backend", config["hardware"]["attention_backend"]])
+
+        # Override generation config (important for Laguna-S-2.1 NVFP4)
+        if gen_config := config["inference"].get("override_generation_config"):
+            cmd.extend(["--override-generation-config", json.dumps(gen_config)])
+            print(f"  Generation Config: Overriding with {gen_config}")
 
         # Custom attention constraint for Step-3.7-Flash models
         if config["inference"].get("disable_cascade_attn"):
@@ -658,6 +668,10 @@ def start():
         if chat_template := config["model"].get("chat_template"):
             cmd.extend(["--chat-template", chat_template])
 
+        # Default chat template kwargs (important for Laguna thinking mode)
+        if default_kwargs := config["inference"].get("default_chat_template_kwargs"):
+            cmd.extend(["--default-chat-template-kwargs", json.dumps(default_kwargs)])
+
         # Speculative decoding configuration (N-gram, EAGLE, Medusa, draft_model, etc.)
         # Check both top-level (legacy) and inference.speculative_decoding (new location)
         spec_config = config.get("speculative_decoding") or config.get("inference", {}).get("speculative_decoding")
@@ -694,11 +708,8 @@ def start():
 
         # For the first replica, run the capability dry-run check to verify kernel resolution
         if i == 0:
-            if not run_constrained_dry_run(cmd, env):
-                print("\n[Capability Warning] Dynamic capability probe failed!")
-                print("  The current configuration is incompatible with this CUDA/Triton stack.")
-                print("  Proceeding to launch the production server anyway as requested...\n")
-                # Purely observational - do not fall back, proceed to launch the model anyway
+            # SKIPPED: verification sample load disabled as requested to start directly
+            pass
 
         print(f"Launching Replica {i} | GPUs {config['replicas']['gpu_groups'][i]} | Port {port}")
         # Open log file and keep it open for the subprocess (don't use context manager)

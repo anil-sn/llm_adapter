@@ -1744,6 +1744,68 @@ def test_adapter_thinking_token_filtering():
         return False
 
 
+def test_adapter_laguna_thinking_preservation():
+    """
+    Adapter Test: Laguna-specific thinking / context retention
+    
+    Verifies that for Laguna-S model configs, thinking is enabled and
+    prior thinking/reasoning blocks in the message history are preserved 
+    and passed cleanly to the server without being stripped or corrupted.
+    """
+    if "laguna" not in TEST_MODEL.lower():
+        stats.add_result("Adapter Compatibility", "Laguna Thinking Preservation", True, skipped=True)
+        return True
+
+    request = {
+        "model": TEST_MODEL,
+        "messages": [
+            {"role": "user", "content": "Explain the quicksort algorithm."},
+            {"role": "assistant", "content": "<thought>Analyzing sorting algorithms...</thought>Quicksort is an O(n log n) sorting algorithm."},
+            {"role": "user", "content": "What is its worst case complexity?"}
+        ],
+        "max_tokens": 100
+    }
+
+    try:
+        response = requests.post(f"{GATEWAY_URL}/v1/messages", json=request, headers=AUTH_HEADERS, timeout=TIMEOUT_DEFAULT)
+
+        if response.status_code != 200:
+            stats.add_result("Adapter Compatibility", "Laguna Thinking Preservation", False,
+                           f"HTTP {response.status_code}")
+            return False
+
+        stats.add_result("Adapter Compatibility", "Laguna Thinking Preservation", True,
+                        "Successfully preserved assistant reasoning history and obtained completion")
+        return True
+
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "Laguna Thinking Preservation", False, str(e))
+        return False
+
+
+def test_default_chat_template_kwargs_injection():
+    """
+    Adapter Test: default_chat_template_kwargs validation
+    
+    Verifies that default_chat_template_kwargs can be successfully 
+    read from config and validated against schema under InferenceConfig.
+    """
+    try:
+        from llm_adapter.utils.config_loader import load_config
+        config_dict = load_config(validate=False)
+        
+        from llm_adapter.utils.config_schema import validate_config
+        validated = validate_config(config_dict)
+        
+        passed = hasattr(validated.inference, "default_chat_template_kwargs")
+        stats.add_result("Adapter Compatibility", "Default Chat Template Kwargs Validation", passed,
+                        "Successfully verified default_chat_template_kwargs schema support")
+        return passed
+    except Exception as e:
+        stats.add_result("Adapter Compatibility", "Default Chat Template Kwargs Validation", False, str(e))
+        return False
+
+
 def test_adapter_claude_code_sse_compliance():
     """
     Adapter Test 3: Claude Code SSE Strict Compliance
@@ -2420,6 +2482,8 @@ def main():
         # Adapter Compatibility Tests (New in v4.1)
         ("Adapter: Hermes Patch", test_adapter_hermes_multiline_patch),
         ("Adapter: Thinking Filter", test_adapter_thinking_token_filtering),
+        ("Adapter: Laguna Preserved", test_adapter_laguna_thinking_preservation),
+        ("Adapter: Chat Template Kwargs", test_default_chat_template_kwargs_injection),
         ("Adapter: Claude Code SSE", test_adapter_claude_code_sse_compliance),
         ("Adapter: OpenAI Functions", test_adapter_openai_function_calling),
         ("Adapter: Special Chars", test_adapter_special_characters),

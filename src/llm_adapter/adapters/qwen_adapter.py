@@ -49,6 +49,8 @@ class QwenAdapter(NemotronAdapter):
 
         self.sampling_profiles = sampling_profiles or self._default_profiles()
         self.max_output_tokens = max_output_tokens
+        self.thinking_requested = False
+        self._in_think_block = False
 
         logger.info(
             f"QwenAdapter initialized: "
@@ -242,6 +244,8 @@ class QwenAdapter(NemotronAdapter):
 
         # Step 3: Determine thinking mode (CLIENT-CONTROLLED: default False)
         thinking = body.get("enable_thinking", False)
+        self.thinking_requested = thinking
+        self._in_think_block = False
 
         # Step 4: Select sampling profile
         profile_hint = body.get("sampling_profile")  # Optional client hint
@@ -318,6 +322,37 @@ class QwenAdapter(NemotronAdapter):
         # Use parent normalization
         chunk = super().normalize_stream_chunk(chunk)
 
-        # Qwen-specific streaming normalization can be added here
+        # Qwen-specific streaming thinking filtering:
+        # If thinking is not requested, strip any thinking blocks/tags from the content stream
+        if not getattr(self, "thinking_requested", False) and "choices" in chunk and chunk["choices"]:
+            delta = chunk["choices"][0].get("delta", {})
+            if "content" in delta:
+                text = delta["content"]
+                if text:
+                    # Initialize tracking state if not present
+                    if not hasattr(self, "_in_think_block"):
+                        self._in_think_block = False
+                        
+                    if "<think>" in text:
+                        self._in_think_block = True
+                        
+                    if self._in_think_block:
+                        if "</think>" in text:
+                            self._in_think_block = False
+                            import re
+                            match = re.search(r'</think>\s*(.*)', text, re.DOTALL)
+                            if match:
+                                delta["content"] = match.group(1).strip()
+                            else:
+                                delta["content"] = ""
+                        else:
+                            delta["content"] = ""
+                    elif "</think>" in text:
+                        import re
+                        match = re.search(r'</think>\s*(.*)', text, re.DOTALL)
+                        if match:
+                            delta["content"] = match.group(1).strip()
+                        else:
+                            delta["content"] = ""
 
         return chunk
