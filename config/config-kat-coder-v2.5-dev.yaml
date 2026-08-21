@@ -1,0 +1,82 @@
+# LLM Orchestrator - KAT-Coder-V2.5-Dev Configuration
+# Model: Kwaipilot/KAT-Coder-V2.5-Dev (35B MoE, 3B active params)
+# Base: Qwen3.6-35B-A3B post-trained with SFT/RL
+# Architecture: Qwen3_5Moe (hybrid linear_attention + full_attention)
+# 256K native context, 248K vocab
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "Kwaipilot/KAT-Coder-V2.5-Dev"
+  served_model_name: "kat-coder-v2.5"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "bf16"
+  engine_preference: "v0"
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.75     # Reduced for 256K context + MoE
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada
+  attention_backend: "TRITON_ATTN" # Supports fp8 kv_cache
+  disable_custom_all_reduce: true
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Context - 256K native (no RoPE scaling needed)
+  max_model_len: 262144            # 256K tokens
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"            # Critical for memory efficiency
+
+  # Memory-efficient features
+  enable_prefix_caching: true      # Reuse KV cache for repeated prefixes
+  enable_chunked_prefill: true     # Process long prompts in chunks
+
+  # Batch settings
+  max_num_batched_tokens: 16384    # Safe prefill chunk size
+  max_num_seqs: 2                  # 2 concurrent sequences
+
+  # MoE specific (if needed for vLLM)
+  enable_expert_parallel: false    # Not needed for standard TP
+
+  # Tool calling (recommended by official docs)
+  tool_call_parser: "qwen3_coder"  # Use Qwen3 coder parser
+  enable_auto_tool_choice: true
+
+  # Reasoning
+  reasoning_parser: "qwen3"
+  enable_thinking: true            # Enable thinking/reasoning mode
+
+  # Output settings
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+
+  # Language-only mode: skip vision encoder (KAT-Coder is text-only)
+  language_model_only: true
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"
+    VLLM_USE_V1: "0"                                    # Disable V1 for stability
+    HF_HUB_OFFLINE: "1"                                 # Offline mode
+    TOKENIZERS_PARALLELISM: "true"
+    NCCL_CROSS_NIC: "0"                                 # PCIe topology
+    PYTORCH_ALLOC_CONF: "expandable_segments:True,max_split_size_mb:512"
+    VLLM_LOGGING_LEVEL: "CRITICAL"
+    VLLM_CONFIGURE_LOGGING: "0"
+    CUDA_LAUNCH_BLOCKING: "0"
+    PYTORCH_CUDA_ALLOC_CONF: "backend:native"
+    OMP_NUM_THREADS: "1"
+    VLLM_WORKER_MULTIPROC_METHOD: "spawn"
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"

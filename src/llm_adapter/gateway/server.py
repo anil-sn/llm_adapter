@@ -149,23 +149,22 @@ async def list_models():
         }
     
     # Static fallback if no active vLLM replica is detected yet
+    # Build the list from configured model IDs so /v1/models reflects what we expect to serve
+    fallback_ids = [
+        m.get("id", f"unknown-{i}")
+        for i, m in enumerate(config.get("models", {}).get("backends", []))
+    ] or ["Coder", "Reasoner"]
     return {
         "object": "list",
         "data": [
             {
-                "id": "Coder",
+                "id": fid,
                 "object": "model",
                 "created": int(time.time()),
                 "owned_by": "llm-adapter",
-                "max_model_len": 900000,  # 900K context
-            },
-            {
-                "id": "Reasoner",
-                "object": "model",
-                "created": int(time.time()),
-                "owned_by": "llm-adapter",
-                "max_model_len": 524288,  # 512K context
+                "max_model_len": config.get("inference", {}).get("max_model_len", 900000),
             }
+            for fid in fallback_ids
         ]
     }
 

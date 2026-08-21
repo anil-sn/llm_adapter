@@ -58,6 +58,25 @@ def get_config():
         traceback.print_exc()
         sys.exit(1)
 
+def detect_model_family(config: dict) -> str:
+    """Detect model family from config for logging purposes."""
+    model_id = config.get("model", {}).get("id", "")
+    if "kat-coder" in model_id.lower() or "KAT-Coder" in model_id:
+        return "kat-coder-v2.5"
+    if "nemotron" in model_id.lower():
+        return "nemotron"
+    if "qwen3" in model_id.lower() or "qwen3.5" in model_id.lower() or "qwen3_5" in model_id.lower():
+        return "qwen3-moe"
+    if "deepseek" in model_id.lower() or "V4-Flash" in model_id:
+        return "deepseek-v4"
+    if "qwen3.6" in model_id.lower():
+        return "qwen3.6"
+    return "generic"
+
+def is_language_model_only(config: dict) -> bool:
+    """Check if model should run as language-only (no vision/multimodal)."""
+    return config.get("inference", {}).get("language_model_only", False)
+
 def get_model_suffix():
     """Get served model name from config as suffix if available."""
     try:
@@ -567,8 +586,11 @@ def start():
         if config["hardware"].get("attention_backend"):
             cmd.extend(["--attention-backend", config["hardware"]["attention_backend"]])
 
-        # Override generation config (important for Laguna-S-2.1 NVFP4)
-        if gen_config := config["inference"].get("override_generation_config"):
+        # Generation config (auto loads from model, or override with custom values)
+        if gen_config := config["inference"].get("generation_config"):
+            cmd.extend(["--generation-config", gen_config])
+            print(f"  Generation Config: {gen_config}")
+        elif gen_config := config["inference"].get("override_generation_config"):
             cmd.extend(["--override-generation-config", json.dumps(gen_config)])
             print(f"  Generation Config: Overriding with {gen_config}")
 
@@ -604,6 +626,11 @@ def start():
         # FEATURE FLAGS
         cmd.append("--no-enable-log-requests")
 
+        # Language-only mode (for text-only models like KAT-Coder that skip vision encoder)
+        if is_language_model_only(config):
+            cmd.append("--language-model-only")
+            print(f"  Mode: Language-only (skipping vision/multimodal encoder)")
+
         if config["inference"].get("enable_prefix_caching"):
             cmd.append("--enable-prefix-caching")
 
@@ -624,15 +651,14 @@ def start():
             cmd.extend(["--max-num-batched-tokens", str(max_batched)])
 
         if config["inference"].get("enable_thinking"):
-            reasoning_parser = config["inference"].get("reasoning_parser", "super_v3")
+            reasoning_parser = config["inference"].get("reasoning_parser")
             reasoning_parser_plugin = config["inference"].get("reasoning_parser_plugin")
 
-            if reasoning_parser_plugin:
-                # Convert to absolute path if relative
-                plugin_path = BASE_DIR / reasoning_parser_plugin if not reasoning_parser_plugin.startswith("/") else Path(reasoning_parser_plugin)
-                cmd.extend(["--reasoning-parser-plugin", str(plugin_path)])
-
-            cmd.extend(["--reasoning-parser", reasoning_parser])
+            if reasoning_parser:
+                cmd.extend(["--reasoning-parser", reasoning_parser])
+                if reasoning_parser_plugin:
+                    plugin_path = BASE_DIR / reasoning_parser_plugin if not reasoning_parser_plugin.startswith("/") else Path(reasoning_parser_plugin)
+                    cmd.extend(["--reasoning-parser-plugin", str(plugin_path)])
 
         if config["hardware"].get("disable_custom_all_reduce"):
             cmd.append("--disable-custom-all-reduce")

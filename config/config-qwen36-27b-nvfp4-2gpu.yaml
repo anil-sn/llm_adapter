@@ -19,7 +19,8 @@ model:
 # ============================================================================
 replicas:
   count: 1
-  gpu_groups: ["0,1"]                   # Only visible to GPU 0 and GPU 1
+# gpu_groups: ["0,1"]                   # Only visible to GPU 0 and GPU 1
+  gpu_groups: ["2,3"]                   # Only visible to GPU 2 and GPU 3
   core_ranges: ["0-55"]                 # Restrict to first 56 CPU threads
 
 # ============================================================================

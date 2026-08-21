@@ -1,0 +1,55 @@
+# LLM Orchestrator - Ornith-1.5-35B-A3B Configuration
+# Mixture-of-Experts (35B total, ~3B active per token)
+# Native Reasoning & Self-Scaffolding Optimization
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "ornith-ai/Ornith-1.5-35B-A3B"
+  served_model_name: "oracle-v4-reasoning"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.90      # Balanced VRAM reservation (fits model + deep context)
+  tensor_parallel_size: 4          # 4× RTX 6000 Ada (48GB each)
+  attention_backend: "FLASHINFER"  # High-throughput flash attention
+  disable_custom_all_reduce: true
+
+# ============================================================================
+# INFERENCE SETTINGS (OPTIMIZED FOR REASONING MOE)
+# ============================================================================
+inference:
+  # Extended context window - 1M tokens with YaRN RoPE scaling
+  max_model_len: 1048576           # 1M tokens (4x native 262K context)
+
+  # YaRN RoPE Scaling for 1M context from 262K native
+  rope_scaling:
+    rope_type: "yarn"              # YaRN scaling method (vLLM format)
+    factor: 4.0                    # 4× scaling from 262K native
+    original_max_position_embeddings: 262144
+
+  # Memory-efficient features for long context
+  enable_prefix_caching: true      # Critical for agentic back-and-forth
+  enable_chunked_prefill: true     # Processes long inputs efficiently
+
+  # Batch settings (Conservative for stable 1M context)
+  max_num_batched_tokens: 16384    # Optimized for long prefill stability
+  max_num_seqs: 2                  # Support up to 2 concurrent deep reasoning streams
+
+  # KV cache optimization (critical for 262K context)
+  kv_cache_dtype: "fp8"
+
+  # Native reasoning and tool call parsing
+  reasoning_parser: "qwen3"        # Extracts `<think>` into reasoning_content
+  tool_call_parser: "qwen3_xml"    # Parses Qwen-heritage XML tools
+
+  # Output limits
+  default_max_tokens: 16384
+  max_output_tokens: 65536         # Supports extensive thought generation

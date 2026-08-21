@@ -1,0 +1,113 @@
+# LLM Orchestrator - Qwen3.8-27B-FP8 2-GPU Configuration
+# Multimodal (vision + language) FP8 model
+# Architecture: Qwen3_5ForConditionalGeneration (hybrid linear + standard attention)
+# Native context: 262K | Quantization: FP8 E4M3 (~24.7GB weights)
+# MTP heads present (64 layers + 1 MTP head, all in FP16)
+# Optimized for 2x RTX 6000 Ada (48GB each) with MTP speculative decoding
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "Qwen/Qwen3.8-27B-FP8"
+  served_model_name: "oracle-v3-multimodal-2gpu"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  precision_profile: "fp8"
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA CONFIGURATION
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1"]            # Use 2 GPUs (TP=2)
+  core_ranges:
+    - "0-27,56-83"               # CPU core affinity (first half of cores)
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.92   # Slightly higher for 2 GPUs (more VRAM per GPU)
+  tensor_parallel_size: 2        # TP=2 (split across 2 GPUs)
+  attention_backend: "FLASHINFER"  # Better for hybrid attention
+
+  # Enable custom all-reduce for faster TP communication
+  # (removed --disable-custom-all-reduce flag)
+
+  # CRITICAL: Disable CUDA TDR timeout that kills long-running kernels
+  # Multimodal init takes >2s, triggers GPU watchdog
+  env_vars:
+    CUDA_DEVICE_MAX_WAIT: "120"  # 120s timeout for GPU operations
+    NCCL_P2P_DISABLE: "1"        # P2P unavailable → broken pipe during multi-GPU init
+    NCCL_PROTO: "simple"         # Stable on PCIe
+    NCCL_IB_DISABLE: "1"         # No InfiniBand on this box
+    NCCL_DEBUG: "WARN"           # Suppress noise, surface real errors
+    VLLM_WORKER_MULTIPROC_METHOD: "spawn"  # Must use spawn, not fork
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Extended context window (1M) - YaRN RoPE scaling beyond native 262K
+  max_model_len: 1000000          # 1M context via YaRN (native: 262K)
+
+  # Memory-efficient features
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings - optimized for 2 GPUs
+  max_num_batched_tokens: 24576   # Reduced for 2 GPUs (was 32768 for 4 GPUs)
+  max_num_seqs: 3                 # 3 concurrent streams (2 GPUs have less total VRAM)
+
+  # KV cache optimization
+  kv_cache_dtype: "fp8"
+
+  # CRITICAL: Multi-Token Prediction speculative decoding (1.5-2x speedup)
+  # Uses built-in MTP draft head to predict 3 tokens ahead
+  speculative_decoding:
+    method: "mtp"
+    num_speculative_tokens: 3
+
+  # YaRN RoPE scaling for 1M context extension (native: 262K)
+  hf_overrides:
+    text_config:
+      rope_parameters:
+        mrope_interleaved: true
+        mrope_section: [11, 11, 10]
+        rope_type: "yarn"
+        rope_theta: 10000000
+        partial_rotary_factor: 0.25
+        factor: 4.0
+        original_max_position_embeddings: 262144
+
+  # Reasoning / tool calling
+  reasoning_parser: "qwen3"
+  tool_call_parser: "qwen3_coder"
+
+  default_max_tokens: 8192
+  max_output_tokens: 32768
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"  # Better for hybrid attention
+    VLLM_USE_V1: "0"              # V0 for FP8 stability on Ada Lovelace
+    VLLM_FP8_ACTIVATION: "1"      # Force native FP8 execution
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"  # Enable 1M context via YaRN RoPE scaling
+
+    # CUDA timeout/module loading (critical for multimodal init)
+    CUDA_DEVICE_MAX_WAIT: "120"   # Disable CUDA TDR watchdog (multimodal init >2s)
+    CUDA_MODULE_LOADING: "LAZY"   # Defer kernel compilation
+
+    # NCCL settings for PCIe topology
+    NCCL_P2P_DISABLE: "1"         # P2P not available, causes broken pipe
+    NCCL_PROTO: "simple"          # Simpler protocol, more stable on PCIe
+    NCCL_IB_DISABLE: "1"          # No InfiniBand on this box
+    NCCL_DEBUG: "WARN"            # Suppress noise but catch real NCCL errors

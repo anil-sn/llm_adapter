@@ -1,0 +1,92 @@
+# LLM Orchestrator - Muse Glimmer-30B Configuration
+# Model: meta-models/Muse-Glimmer-30B (Dense 29.6B + 1.8B Vision Encoder)
+# Hardware: Single RTX 6000 Ada (48GB VRAM)
+# Features: Multimodal (text+image), 131K native context, n-gram speculative decoding
+# Inherits from: config.yaml, config-adapter.yaml
+# NOTE: chat_template.jinja is part of the model repo — vLLM loads it automatically.
+# NOTE: Muse-Glimmer chat template has its own reasoning output format (see <|start|>assistant and <|eom|>/<|eot|> markers).
+#       vLLM's OpenAI-compliant serving will handle this natively.
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "/home/asrirang/.cache/huggingface/hub/models--meta-models--Muse-Glimmer-30B/snapshots/97c77dff50b2797bcc558fa2d909761dbc575c59"
+  served_model_name: "muse-glimmer"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+
+# ============================================================================
+# REPLICA CONFIGURATION (Single GPU - model fits in 48GB at 4-bit)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["2,3"]                       # Use idle GPUs 2,3 (free 0,1 for Qwen3)
+  core_ranges: ["0-55,56-111"]              # CPU core affinity (full range)
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.90              # Balanced utilization
+  tensor_parallel_size: 2                   # TP=2 (split across 2 GPUs)
+  attention_backend: "FLASHINFER"           # FlashInfer for sliding window efficiency
+  linear_backend: "auto"
+  kv_cache_dtype: "auto"                     # Disable FP8 KV cache (Marlin+FP8 causes logit corruption)
+  disable_custom_all_reduce: true            # PCIe topology (no NVLink)
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  language_model_only: true                 # Skip vision encoder (fixes vLLM 0.27.0 profile bug)
+
+  # Context settings - YaRN RoPE scaled to 256K
+  max_model_len: 262144                     # 256K context via YaRN (native 131K)
+
+  # Memory-efficient features
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings - scaled for 256K context
+  max_num_batched_tokens: 32768             # 2x for longer context handling
+  max_num_seqs: 16                          # Moderate concurrency for 256K
+
+  # KV cache optimization
+  kv_cache_dtype: "auto"
+
+  # Multimodal settings
+  limit_mm_per_prompt:
+    image: 5                                # Max 5 images per prompt
+
+  # Sampling parameters (from model card + generation_config.json)
+  default_chat_template_kwargs:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 64
+    enable_thinking: true
+
+  # Reasoning & tools — Muse-Glimmer uses custom thinking markers
+  reasoning_parser: "muse_glimmer"
+  reasoning_parser_plugin: "src/vllm_muse_glimmer_reasoning_parser.py"
+  enable_auto_tool_choice: false
+
+  # RoPE Scaling - YaRN for extended context (131K -> 256K)
+  rope_scaling:
+    type: "yarn"
+    factor: 2.0                             # 131072 * 2.0 ≈ 262144
+    original_max_position_embeddings: 131072
+
+  # Speculative decoding DISABLED for first baseline test
+  # Re-enable after baseline generation is verified:
+  # speculative_decoding:
+  #   method: "ngram"
+  #   num_speculative_tokens: 5
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
