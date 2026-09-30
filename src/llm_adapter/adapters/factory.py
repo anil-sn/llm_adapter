@@ -26,6 +26,7 @@ from .nemotron_adapter import NemotronAdapter
 from .qwen_adapter import QwenAdapter
 from .mistral_adapter import MistralAdapter
 from .laguna_adapter import LagunaAdapter
+from .k2_horizon_adapter import K2HorizonAdapter
 
 from llm_adapter.utils.config_loader import load_config, ConfigError
 
@@ -158,10 +159,19 @@ def get_adapter(
             max_output_tokens=max_output_tokens
         )
 
-    else:  # openai or unknown
-        adapter = OpenAIAdapter(
-            max_context=MAX_CONTEXT
+    elif selected_type in {"k2_horizon", "k2-horizon", "k2"}:
+        adapter = K2HorizonAdapter(
+            max_context=MAX_CONTEXT,
+            default_reasoning_effort=config.get("inference", {}).get("default_chat_template_kwargs", {}).get("reasoning_effort", "low"),
         )
+
+    else:  # openai or unknown
+        adapter = K2HorizonAdapter(
+            max_context=MAX_CONTEXT,
+            default_reasoning_effort=config.get("inference", {}).get("default_chat_template_kwargs", {}).get("reasoning_effort", "low"),
+        ) if re.search(
+            r"(?:^|[-_/])k2[-_]?horizon", model_id, re.IGNORECASE
+        ) else OpenAIAdapter(max_context=MAX_CONTEXT)
 
     logger.info(f"Request routed: '{model_id}' → {adapter.__class__.__name__}")
     return adapter

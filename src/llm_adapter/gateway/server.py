@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from pathlib import Path
 
 from llm_adapter.adapters.factory import get_adapter
+from llm_adapter.adapters.k2_horizon_adapter import K2ClaudeAdapter
 from llm_adapter.scheduler.pulse_scheduler import PulseScheduler
 from llm_adapter.utils.config_loader import load_config, ConfigError
 from llm_adapter.utils.user_detector import get_user_detector
@@ -321,16 +322,28 @@ async def proxy_router(request: Request, path: str):
         body["model"] = target_model_name
 
         # Use ClaudeAdapter for Anthropic requests, NemotronAdapter for OpenAI
-        adapter = get_adapter("claude-haiku-4-5-20251001" if is_anthropic else target_model_name)
+        is_k2 = "k2-horizon" in target_model_name.lower()
+        adapter = (
+            K2ClaudeAdapter(
+                max_context=config.get("inference", {}).get("max_model_len", 32768),
+                default_reasoning_effort=config.get("inference", {}).get("default_chat_template_kwargs", {}).get("reasoning_effort", "low"),
+            )
+            if is_anthropic and is_k2
+            else get_adapter("claude-haiku-4-5-20251001" if is_anthropic else target_model_name)
+        )
 
         vllm_path = "/v1/chat/completions" if is_anthropic else f"/{path.lstrip('/')}"
-        target_url = f"{target_replica_url}{vllm_path}"
 
         try:
             refined_request = adapter.build_request(body)
+            # K2 must bypass vLLM's chat-template implementation.  Its adapter
+            # has already rendered an equivalent raw prompt.
+            if getattr(adapter, "uses_completions_endpoint", False):
+                vllm_path = "/v1/completions"
+            target_url = f"{target_replica_url}{vllm_path}"
 
             # Log what we're sending to vLLM for debugging
-            if "messages" not in refined_request:
+            if "messages" not in refined_request and not getattr(adapter, "uses_completions_endpoint", False):
                 logger.error(f"WARNING: No messages in refined request! Original keys: {list(body.keys())}")
             is_streaming = body.get("stream", False)
             client_requested_streaming = is_streaming  # Remember original client request
@@ -341,6 +354,10 @@ async def proxy_router(request: Request, path: str):
             needs_tool_workaround = (
                 (SERVED_MODEL.startswith("gemma")) or
                 (SERVED_MODEL.startswith("mistral") or "claude-haiku" in SERVED_MODEL)
+                # Claude Code accepts the standards-compliant SSE synthesized
+                # below. Buffer K2's custom tagged tool output so it can be
+                # parsed into Anthropic tool_use blocks before it is emitted.
+                or isinstance(adapter, K2ClaudeAdapter)
             )
             if is_streaming and needs_tool_workaround and refined_request.get("tools"):
                 logger.warning(f"[{user}] {SERVED_MODEL} + tools + streaming detected - forcing non-streaming (vLLM bug workaround)")
