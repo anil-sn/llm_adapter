@@ -1,0 +1,144 @@
+# LLM Orchestrator - Qwen3.8-Flash-Next NVFP4 Configuration
+# Model: nvidia/Qwen3.8-Flash-Next-NVFP4 (Official NVIDIA Model Optimizer quantization)
+# Released: 08/31/2026 via https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4
+# Quantization: Mixed precision - NVFP4 W4A4 (routed experts), BF16 (attention/shared), FP8 (MTP/PLE)
+# Architecture: 125B total params (6B active), 4B MTP, 51B N-gram embedding
+# Hybrid Attention: Gated DeltaNet + Qwen Sparse Attention with MoE
+# Hardware: 8× NVIDIA Blackwell B200/B300 recommended (optimized for)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  chat_template: "config/qwen_fixed.jinja"
+  id: "nvidia/Qwen3.8-Flash-Next-NVFP4"
+  served_model_name: "qwen38-flash-next"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA CONFIGURATION
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1,2,3"]          # 4 GPUs (adjust based on available hardware)
+  core_ranges:
+    - "0-111"                        # CPU core affinity
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                      # Auto-select optimal precision for NVFP4 mixed precision
+  quantization: "modelopt"           # NVIDIA Model Optimizer (v0.46.0) quantization
+  gpu_memory_utilization: 0.90       # Conservative for 125B model
+  tensor_parallel_size: 4            # 4 GPUs (8 GPUs recommended for optimal performance)
+  attention_backend: "FLASHINFER"    # Default attention backend
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  # Native context: 262K, extensible to 1M tokens
+  max_model_len: 262144              # Native 262K context (extensible to 1M)
+
+  # Memory-efficient features
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 4                    # 4 concurrent streams for 4 GPUs
+
+  # KV cache optimization
+  kv_cache_dtype: "auto"             # Auto-select optimal KV cache precision
+
+  # MoE Settings - CRITICAL: Expert parallel required for MTP
+  enable_expert_parallel: true       # Required for MTP with FP8 128x128 blocks
+  moe_backend: "auto"
+
+  # Multi-Token Prediction speculative decoding
+  # MTP module uses 128x128 block-scaled FP8
+  speculative_decoding:
+    method: "mtp"
+    num_speculative_tokens: 1        # NVIDIA recommendation for this model
+
+  # Reasoning / tool calling
+  enable_thinking: true
+  reasoning_parser: "qwen3"
+  tool_call_parser: "qwen3_coder"
+
+  # Generation config (from NVIDIA benchmarks)
+  override_generation_config:
+    temperature: 1.0
+    top_p: 0.95
+
+  # Output settings
+  default_max_tokens: 131072         # As per benchmark settings
+  max_output_tokens: 131072
+
+  # Reasoning effort (from benchmark configuration)
+  default_chat_template_kwargs:
+    reasoning_effort: "xhigh"        # Benchmark used xhigh
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_USE_V1: "0"                 # V0 engine for NVFP4 stability
+    VLLM_ENABLE_FLASHINFER_AUTOTUNE: "0"  # Disable autotune (as per NVIDIA example)
+    FLASHINFER_DISABLE_VERSION_CHECK: "1"
+
+    # Memory optimization
+    PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# Official NVIDIA Model Optimizer quantization (v0.46.0):
+# - Mixed precision checkpoint (~2.7x smaller than BF16, ~63% disk reduction)
+# - Routed MoE experts: W4A4 NVFP4 with MSE-calibrated weight scales
+# - Preserved in BF16: Attention, shared experts, other main-model layers
+# - MTP routed experts: 128x128 block-scaled FP8
+# - PLE n-gram embedding: Per-tensor FP8
+# - Total: 125B params (6B activated), 4B MTP, 51B n-gram embedding
+#
+# Architecture:
+# - Hybrid Attention: Gated DeltaNet + Qwen Sparse Attention
+# - Mixture-of-Experts with gated residual streams
+# - Vision encoder included (multimodal: text, image, video)
+# - Context: 262K native, extensible to 1M tokens
+#
+# Requirements:
+# - vLLM commit d4d703caf908786416585ceb1f369e2e0363358b or later (for non-MTP)
+# - vLLM PR #55513 required for MTP speculative decoding (until merged)
+# - Transformers v5.16.0+ for upstream Qwen4-Exp support
+# - Optimized for NVIDIA Blackwell B200/B300
+#
+# Benchmark results (vs Qwen3.8-Flash-Next-FP8 baseline):
+# - GPQA Diamond: 91.5 (baseline: 92.0)
+# - HLE: 35.4 (baseline: 34.7)
+# - τ²-Bench Telecom: 90.1 (baseline: 90.8)
+# - MMMU Pro: 78.3 (baseline: 77.1)
+# - SciCode: 18.8 (baseline: 16.3)
+# - AA-LCR: 74.1 (baseline: 71.9)
+# - Terminal-Bench 2.1: 82.9 (baseline: 83.3)
+#
+# Usage example:
+# vllm serve nvidia/Qwen3.8-Flash-Next-NVFP4 \
+#   --tensor-parallel-size 8 \
+#   --enable-expert-parallel \
+#   --quantization modelopt \
+#   --max-model-len 262144 \
+#   --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
+#   --reasoning-parser qwen3 \
+#   --trust-remote-code \
+#   --no-enable-flashinfer-autotune
+#
+# License: NVIDIA Open Model License + Qwen Community License 1.0
+# Release Date: 08/31/2026
+# Reference: https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4

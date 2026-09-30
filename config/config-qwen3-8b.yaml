@@ -1,0 +1,101 @@
+# LLM Orchestrator - Qwen3-8B Configuration (Single GPU)
+# Dense 8B parameter instruct model with 40K native context
+# Lightweight deployment with thinking and tool calling support
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "Qwen/Qwen3-8B"
+  served_model_name: "qwen3-8b"
+  trust_remote_code: false               # Qwen3 doesn't require trust_remote_code
+  tokenizer_mode: "auto"
+  chat_template: "config/qwen_fixed.jinja"  # Use fixed chat template
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (Single GPU 0)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0"]                      # Single GPU deployment
+  core_ranges: ["0-27"]                  # Adjust based on your CPU topology
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                          # Auto-detect (likely bfloat16)
+  gpu_memory_utilization: 0.90           # High utilization for single GPU
+  tensor_parallel_size: 1                # Single GPU deployment
+  attention_backend: "FLASHINFER"        # High-performance attention
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 40960                   # 40K native context (no RoPE scaling)
+                                         # Can reduce to 32768 if memory constrained
+
+  # KV Cache: auto for optimal performance
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # Reasoning and tool calling (Qwen3 native features)
+  enable_thinking: true
+  reasoning_parser: "qwen3"              # Qwen3 built-in <think> parser
+  tool_call_parser: "qwen3_coder"        # Qwen3 XML/JSON tool calling
+  enable_auto_tool_choice: true
+
+  # Generation config (Qwen3 recommended settings)
+  override_generation_config:
+    temperature: 0.7
+    top_p: 0.8
+    top_k: 20
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"                     # V0 for stability
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - Qwen3-8B: Dense 8B parameter instruct model
+# - Single GPU deployment optimized for GPU 0
+# - Native 40K context window (no RoPE scaling needed)
+# - Memory footprint: ~16GB for model weights + KV cache (8B params)
+# - Supports Qwen3 native features:
+#   - Thinking mode: <think></think> tags
+#   - Tool calling: XML and JSON formats via qwen3_coder parser
+# - Compatible with vLLM 0.30.0+ (native Qwen3 support)
+# - No trust_remote_code required (standard transformer architecture)
+#
+# PERFORMANCE:
+# - Excellent for general instruction following
+# - Good for conversational AI and reasoning tasks
+# - Efficient single-GPU deployment
+# - Fast inference with FLASHINFER attention
+#
+# SCALING OPTIONS:
+# - Can extend to 128K context with YaRN RoPE scaling (factor: 3.1×)
+# - Can use FP8 KV cache for extended context (set kv_cache_dtype: "fp8")
+# - Can enable speculative decoding for 1.5-2× speedup:
+#     speculative_decoding:
+#       method: "ngram"
+#       num_speculative_tokens: 5
+# ============================================================================

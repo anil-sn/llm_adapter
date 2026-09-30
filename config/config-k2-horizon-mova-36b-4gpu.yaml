@@ -1,0 +1,89 @@
+# LLM Orchestrator - IFM/K2-Horizon-MoVA-36B-A4B-FP8 Configuration (4-GPU / 524K CONTEXT)
+# MoE + MoVA attention: 36B stored / 4B active per token
+# Native FP8 quantized checkpoint for optimal memory efficiency
+# Native 524K context, frontier-class agentic and reasoning performance
+# 4-GPU setup enables full native 524K context with FP8 efficiency
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "IFM/K2-Horizon-MoVA-36B-A4B-FP8"
+  served_model_name: "k2-horizon-mova-fp8"
+  trust_remote_code: true  # Required for K2-Horizon custom architecture
+  engine_preference: "v0"
+  chat_template: "config/k2_horizon_template.jinja"  # Override model's template (template loaded from HF API)
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (4-GPU setup with Expert Parallel)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1,2,3"]               # Tensor + Expert parallel across all 4 GPUs
+  core_ranges: ["0-111"]
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                         # FP8 model uses auto dtype
+  gpu_memory_utilization: 0.90          # Conservative for full 524K context stability
+  tensor_parallel_size: 4               # TP=4 for dense layers, distributes KV cache
+  enable_expert_parallel: true          # EP for MoE layers (required for MoE)
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 524288                 # Full native 524K context enabled (4 GPUs)
+
+  # KV Cache: FP8 for maximum context capacity
+  kv_cache_dtype: "fp8"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true          # Critical for long context processing
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # Reasoning and tool calling (K2 Horizon native features)
+  # NOTE: k2_horizon parser not yet in vLLM 0.28.0 - using qwen3 as compatible fallback
+  # k2_horizon parser will be available in future vLLM release
+  enable_thinking: true
+  reasoning_parser: "qwen3"           # Fallback: qwen3 works with <think> tags
+  tool_call_parser: "qwen3_coder"     # Fallback: XML format compatible
+  enable_auto_tool_choice: true
+
+  # Recipe recommended generation config
+  override_generation_config:
+    temperature: 1.0
+    top_p: 0.95
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768              # Model card examples use 32K
+
+  # CRITICAL: Always use "high" reasoning effort for best results (per model card)
+  # All benchmark results were achieved with reasoning_effort="high"
+  default_chat_template_kwargs:
+    reasoning_effort: "high"            # Options: high, medium, low
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"                    # V0 for MoE stability
+
+# ============================================================================
+# ALTERNATIVE: SGLang (if using SGLang backend instead of vLLM)
+# ============================================================================
+# SGLang command for 4-GPU setup with router numerics override:
+# python3 -m sglang.launch_server \
+#   --model-path IFM/K2-Horizon-MoVA-36B-A4B-FP8 --tp 4 --ep 4 --dtype auto \
+#   --attention-backend fa3 \
+#   --json-model-override-args '{"xllm_source_router_gemm_partitions":2}' \
+#   --reasoning-parser k2_horizon --tool-call-parser k2_horizon \
+#   --max-model-len 524288

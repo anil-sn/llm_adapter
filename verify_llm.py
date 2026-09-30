@@ -88,10 +88,88 @@ def extract_json_robust(text):
             
     return None
 
+def test_openai_compatibility(base_url, api_key, headers):
+    """Test OpenAI SDK compatibility"""
+    print()
+    print(header("=" * 80))
+    print(header("            OPENAI API COMPATIBILITY TEST"))
+    print(header("=" * 80))
+
+    try:
+        # Try importing OpenAI SDK
+        from openai import OpenAI
+        print(f"  {success('[+]')} OpenAI SDK installed")
+
+        # Initialize client
+        client = OpenAI(api_key=api_key, base_url=f"{base_url}/v1")
+
+        # Test 1: Models endpoint
+        print(f"\n{info('[1/4] Testing /v1/models endpoint...')}")
+        models = client.models.list()
+        model_ids = [m.id for m in models.data]
+        print(f"  {success('[+]')} Available models: {model_ids}")
+
+        if not model_ids:
+            print(f"  {error('[-]')} No models available")
+            return False
+
+        selected_model = model_ids[0]
+
+        # Test 2: Chat completion
+        print(f"\n{info('[2/4] Testing standard chat completion...')}")
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=[{"role": "user", "content": "Say 'hello' in 3 words"}],
+            max_tokens=20
+        )
+        print(f"  {success('[+]')} Response: {response.choices[0].message.content}")
+        print(f"  {success('[+]')} Tokens: {response.usage.total_tokens}")
+
+        # Test 3: Streaming
+        print(f"\n{info('[3/4] Testing streaming chat completion...')}")
+        print(f"  {info('[*]')} Stream: ", end="")
+        stream = client.chat.completions.create(
+            model=selected_model,
+            messages=[{"role": "user", "content": "Count to 3"}],
+            max_tokens=30,
+            stream=True
+        )
+        for chunk in stream:
+            if chunk.choices[0].delta.content:
+                print(chunk.choices[0].delta.content, end="", flush=True)
+        print()
+        print(f"  {success('[+]')} Streaming working")
+
+        # Test 4: Temperature and parameters
+        print(f"\n{info('[4/4] Testing OpenAI parameters (temperature, top_p)...')}")
+        response = client.chat.completions.create(
+            model=selected_model,
+            messages=[{"role": "user", "content": "Hi"}],
+            max_tokens=10,
+            temperature=0.7,
+            top_p=0.9
+        )
+        print(f"  {success('[+]')} Parameters accepted: temperature=0.7, top_p=0.9")
+
+        print()
+        print(header("=" * 80))
+        print(f"  {success('[✓]')} OpenAI API Compatibility: FULLY COMPATIBLE")
+        print(header("=" * 80))
+        return True
+
+    except ImportError:
+        print(f"  {warning('[!]')} OpenAI SDK not installed (pip install openai)")
+        print(f"  {info('[*]')} Skipping OpenAI SDK compatibility test")
+        print(f"  {info('[*]')} Proceeding with raw HTTP tests...")
+        return None
+    except Exception as e:
+        print(f"  {error('[-]')} OpenAI compatibility test failed: {e}")
+        return False
+
 def test_connectivity():
     base_url = os.getenv("LLM_BASE_URL", "http://10.172.249.149:8888").rstrip('/')
     api_key = os.getenv("LLM_API_KEY", "EDGE-AI-ADMIN")
-    
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -102,6 +180,9 @@ def test_connectivity():
     print(header("            LLM GATEWAY ADVANCED DOMAIN & LATENCY BENCHMARK"))
     print(f"  {dim('Target Endpoint:')} {base_url}")
     print(header("=" * 80))
+
+    # Run OpenAI compatibility test first
+    test_openai_compatibility(base_url, api_key, headers)
 
     # 1. Detect API Type & Active Models Dynamically
     api_type = "unknown"
@@ -210,8 +291,8 @@ def test_connectivity():
             "model": selected_model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
-            "temperature": 0,
-            "seed": 42,
+            "temperature": 0.7,
+            "top_p": 0.95,
             "stream": True,
             "stream_options": {"include_usage": True}
         }
@@ -280,85 +361,8 @@ def test_connectivity():
             print(metric("TTFT:", f"{ttft_ms:.2f}", " ms"))
             print(metric("Latency:", f"{total_time:.2f}", " s"))
             print(metric("Tokens:", f"{completion_tokens}", " generated"))
+            print(metric("Input Tokens:", f"{prompt_tokens}", ""))
             print()
-
-            # Initiate AI-as-a-Judge Evaluation & Self-Grading
-            print(f"  {info('[*]')} Submitting generated response to AI-as-a-Judge...")
-            
-            judge_prompt = f"""Evaluate the following response to the prompt.
-
-[Original Prompt]
-{prompt}
-
-[Generated Response]
-{text_generated}
-
-Return a JSON object with these keys:
-- "accuracy": integer 0-100
-- "reasoning": integer 0-100
-- "formatting": integer 0-100
-- "overall": integer 0-100
-- "critique": brief explanation
-
-Respond with ONLY the JSON object. No markdown, no explanation."""
-
-            eval_payload = {
-                "model": selected_model,
-                "messages": [{"role": "user", "content": judge_prompt}],
-                "max_tokens": 4096,
-                "temperature": 0.1
-            }
-
-            judge_score = "N/A"
-            eval_resp = requests.post(url, headers=headers, json=eval_payload, timeout=60)
-
-            if eval_resp.status_code == 200:
-                eval_data = eval_resp.json()
-                choices = eval_data.get("choices", [])
-                if not choices:
-                    judge_score = "N/A (no response)"
-                else:
-                    eval_text = choices[0].get("message", {}).get("content", "")
-
-                    # Try structured JSON first, fall back to regex
-                    judge_score = "N/A (parse failed)"
-                    eval_json = extract_json_robust(eval_text)
-                    if eval_json:
-                        judge_score = eval_json.get("overall", "N/A")
-
-                    # Fallback: regex patterns
-                    if judge_score == "N/A (parse failed)":
-                        cleaned = eval_text.strip()
-                        # Strip markdown code fences if present
-                        if cleaned.startswith("```"):
-                            cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
-                            cleaned = re.sub(r'\n?```\s*$', '', cleaned)
-
-                        match = re.search(r'FINAL PERFORMANCE SCORE:\s*(\d+)', cleaned)
-                        if match:
-                            judge_score = match.group(1)
-                        else:
-                            # Last resort: find any standalone number 0-100
-                            nums = re.findall(r'(\d{1,3})\s*/\s*100', cleaned)
-                            if nums:
-                                judge_score = nums[0]
-                            else:
-                                # Try to find "overall": N pattern
-                                overall_match = re.search(r'"overall"\s*:\s*(\d+)', cleaned)
-                                if overall_match:
-                                    judge_score = overall_match.group(1)
-                                else:
-                                    print(f"  {warning('[!]')} Judge parse failed — raw response:")
-                                    print(f"  {dim(eval_text[:500])}")
-
-                print()
-                print(header("=" * 80))
-                print(f"  {header('AI JUDGE REPORT:')} {test_name}")
-                print(header("=" * 80))
-                print(eval_text)
-                print(header("=" * 80))
-            else:
-                print(f"  {error('[-]')} Evaluation request failed: {eval_resp.text}")
 
             # Collect results for scoreboard
             benchmark_results.append({
@@ -366,7 +370,8 @@ Respond with ONLY the JSON object. No markdown, no explanation."""
                 "ttft_ms": ttft_ms,
                 "t_s": tokens_per_sec,
                 "latency": total_time,
-                "score": f"{judge_score}/100"
+                "tokens": completion_tokens,
+                "input_tokens": prompt_tokens
             })
 
         except Exception as e:
@@ -377,11 +382,10 @@ Respond with ONLY the JSON object. No markdown, no explanation."""
     print(header("=" * 80))
     print(f"  {header('CONSOLIDATED BENCHMARK SCOREBOARD')}")
     print(header("=" * 80))
-    print(f"  {dim('PROFILE')}{' ' * 35} | {dim('TTFT')}{' ' * 7} | {dim('SPEED')}{' ' * 8} | {dim('AI SCORE')}{' ' * 6}")
+    print(f"  {dim('PROFILE')}{' ' * 35} | {dim('TTFT')}{' ' * 6} | {dim('SPEED')}{' ' * 7} | {dim('TOKENS')}")
     print("-" * 80)
     for res in benchmark_results:
-        score_color = Colors.GREEN if res['score'] != "N/A" else Colors.RED
-        print(f" {res['name']:<42} | {res['ttft_ms']:>7.2f} ms | {res['t_s']:>7.2f} T/S  | {c(res['score'], score_color):>10}")
+        print(f" {res['name']:<42} | {res['ttft_ms']:>6.0f} ms | {res['t_s']:>6.1f} T/S | {res['tokens']:>4} tok")
     print(header("=" * 80))
     if not benchmark_results:
         print(f"  {error('[-]')} All benchmarks failed — no results to display.")

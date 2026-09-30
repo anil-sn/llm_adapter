@@ -1,7 +1,7 @@
 [project]
 name = "llm-adapter"
-version = "2.1.0"
-description = "High-Performance Multi-Model LLM Inference Orchestrator with Extended Context Support (640K tokens)"
+version = "2.2.0"
+description = "High-Performance Multi-Model LLM Inference Orchestrator with Extended Context Support (1M tokens)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
@@ -39,9 +39,9 @@ dependencies = [
     "setuptools-rust>=1.12.1",
     "setuptools-scm>=10.0.5",
     "torch==2.13.0",
-    "transformers>=5.15.0",
+    "transformers>=5.16.1",
     "uvicorn>=0.44.0",
-    "vllm>=0.27.0",
+    "vllm>=0.30.0",
     "wheel>=0.47.0",
     "whichllm",
 ]
@@ -84,13 +84,18 @@ warn_return_any = true
 warn_unused_configs = true
 
 [tool.uv]
-# vLLM v0.24.0 compiled from source (v0.24.0+cu132 indicates local build)
+# vLLM built from the `main` branch (native k2_horizon reasoning/tool-call
+# parser support from PR #55063, merged after the v0.29.0 tag was cut).
 # Build command for ultra-fast clean reinstall (using 96 parallel jobs):
+#
+#   # Clone from main to a scratch dir, but keep uv INSIDE the project root
+#   # so it targets .venv (cd-ing away makes uv report "No virtual environment").
+#   rm -rf /tmp/vllm-build-fast && mkdir -p /tmp/vllm-build-fast
+#   git clone --depth 1 https://github.com/vllm-project/vllm.git /tmp/vllm-build-fast/vllm
 #   uv pip uninstall vllm
-#   rm -rf /tmp/vllm-build-fast && mkdir -p /tmp/vllm-build-fast && cd /tmp/vllm-build-fast
-#   git clone --depth 1 --branch v0.24.0 https://github.com/vllm-project/vllm.git /tmp/vllm-build-fast/vllm
 #   uv pip install setuptools-scm
-#   VLLM_TARGET_DEVICE=cuda TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 9.0" MAX_JOBS=96 uv pip install --no-build-isolation /tmp/vllm-build-fast/vllm
+#   VLLM_TARGET_DEVICE=cuda TORCH_CUDA_ARCH_LIST="8.0 8.6 8.9 9.0" MAX_JOBS=96 \
+#     uv pip install --no-build-isolation /tmp/vllm-build-fast/vllm
 #
 # System requirements:
 #   - CUDA Toolkit 13.2 at /usr/local/cuda

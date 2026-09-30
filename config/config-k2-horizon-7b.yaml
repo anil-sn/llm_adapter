@@ -1,0 +1,96 @@
+# LLM Orchestrator - IFM/K2-Horizon-7B Configuration (Single GPU)
+# Dense 7B parameter model with advanced reasoning and tool-calling capabilities
+# Native support for thinking modes (high/medium/low effort) and multi-format tool calling
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "IFM/K2-Horizon-7B"
+  served_model_name: "k2-horizon-7b"
+  trust_remote_code: true  # Required for K2-Horizon custom architecture
+  engine_preference: "v0"
+  chat_template: "config/k2_horizon_template.jinja"  # Override model's template (template loaded from HF API)
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (Single GPU 0)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0"]                      # Single GPU deployment
+  core_ranges: ["0-27"]                  # Adjust based on your CPU topology
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                          # Auto-detect optimal dtype (likely bfloat16)
+  gpu_memory_utilization: 0.85           # Conservative for stability
+  tensor_parallel_size: 1                # Single GPU deployment
+  attention_backend: "FLASHINFER"        # High-performance attention
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 65536                   # 64K context (adjust based on GPU memory)
+                                         # Can increase to 131072 (128K) if memory permits
+
+  # KV Cache: auto for optimal performance
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # Reasoning and tool calling (K2 Horizon native features)
+  # Using NATIVE k2_horizon parsers (vLLM 0.30.0+)
+  enable_thinking: true
+  reasoning_parser: "k2_horizon"         # Native K2-Horizon reasoning parser (<ifm|think> tags)
+  tool_call_parser: "k2_horizon"         # Native K2-Horizon tool parser (json/xml/xml_typed formats)
+  enable_auto_tool_choice: true
+
+  # Generation config (recommended settings)
+  override_generation_config:
+    temperature: 1.0
+    top_p: 0.95
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768               # Generous output budget
+
+  # Low effort is the interactive default: it avoids long hidden deliberation
+  # for routine chat/tool calls. Clients can override to medium or high.
+  default_chat_template_kwargs:
+    reasoning_effort: "low"              # Options: high, medium, low
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"                     # V0 for stability
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_TORCH_COMPILE_LEVEL: "0"        # Disable torch compilation for compatibility
+    TORCH_COMPILE_DISABLE: "1"           # Force disable torch.compile
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - Based on IFM/K2-Horizon-7B (dense 7B model, not MoE)
+# - Single GPU deployment optimized for GPU 0
+# - ✅ NATIVE SUPPORT: vLLM 0.30.0+ includes K2HorizonForCausalLM architecture
+# - ✅ NATIVE PARSERS: k2_horizon reasoning & tool parsers built-in
+# - Memory footprint: ~14GB for model weights + KV cache (7B params)
+# - Can increase max_model_len to 131072 or higher if GPU memory permits (49GB Ada)
+# - Supports reasoning effort modes: high (default), medium, low
+# - Tool calling formats: json, xml, xml_typed (configured via tool_call_format)
+# - Custom architecture requires trust_remote_code: true
+# - Parser features:
+#   - Reasoning: <ifm|think>, <ifm|think_fast>, <ifm|think_faster>
+#   - Tool calls: <ifm|tool_calls>, <ifm|tool_call>, <ifm|arg_key>, <ifm|arg_value>
+# ============================================================================

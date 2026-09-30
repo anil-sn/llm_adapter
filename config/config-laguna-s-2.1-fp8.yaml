@@ -1,0 +1,73 @@
+# LLM Orchestrator - poolside/Laguna-S-2.1 FP8 Configuration (4-GPU / 128K CONTEXT)
+# Quantization: FP8 (weights) / FP16 (KV Cache)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "poolside/Laguna-S-2.1-FP8"
+  served_model_name: "laguna"
+  trust_remote_code: true
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1,2,3"]
+  core_ranges: ["0-111"]
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.90   # Lowered for Xorg/system headroom
+  tensor_parallel_size: 4
+  attention_backend: "FLASHINFER"
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 262144                 # 256K context — native RoPE safe, avoids attention distortion
+
+  # hf_overrides disabled to prevent positional embedding collapse
+  # The model ships with native RoPE weights; custom YaRN overrides cause attention distortion
+
+  # KV Cache: auto = FP16 (stable on Ada Lovelace, FP8 requires Hopper+)
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  max_num_batched_tokens: 8192   # 8192 is optimal for MoE latency
+  max_num_seqs: 2
+
+  # Reasoning control
+  enable_thinking: true
+  reasoning_parser: "poolside_v1"
+  tool_call_parser: "poolside_v1"
+
+  # Generation config (requires top_k for Laguna reasoning stability)
+  override_generation_config:
+    temperature: 0.6
+    top_p: 0.95
+    top_k: 20                    # Required for Laguna reasoning stability
+    repetition_penalty: 1.05     # Prevents n-gram loops during thinking
+
+  # Output settings
+  default_max_tokens: 16384
+  max_output_tokens: 65536
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_USE_V1: "0"
+    VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER: "0"
+    FLASHINFER_DISABLE_VERSION_CHECK: "1"

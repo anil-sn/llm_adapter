@@ -1,0 +1,102 @@
+# LLM Orchestrator - IFM/K2-Horizon-MoVA-36B-A4B-FP8 Configuration (NATIVE PARSERS)
+# MoE + MoVA attention: 36B stored / 4B active per token
+# Native FP8 quantized checkpoint for optimal memory efficiency
+# Native 524K context, frontier-class agentic and reasoning performance
+# REQUIRES: vLLM v0.30.0+ (native k2_horizon parser support via PR #55063)
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "IFM/K2-Horizon-MoVA-36B-A4B-FP8"
+  served_model_name: "k2-horizon-mova-fp8"
+  trust_remote_code: true  # Required for K2-Horizon custom architecture
+  engine_preference: "v0"
+  chat_template: "config/k2_horizon_template.jinja"  # Override model's template (template loaded from HF API)
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (2-GPU setup with Expert Parallel)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0,1"]                    # Tensor + Expert parallel across 2 GPUs
+  core_ranges: ["0-55"]
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                         # FP8 model uses auto dtype
+  gpu_memory_utilization: 0.85          # Conservative for FP8 stability
+  tensor_parallel_size: 2               # TP=2 for dense layers
+  enable_expert_parallel: true          # EP for MoE layers (required for MoE)
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 262144                 # FP8 quantization enables 256K context on 2 GPUs
+                                        # Can push to 524288 if needed (native max)
+
+  # KV Cache: FP8 for maximum context capacity
+  kv_cache_dtype: "fp8"                 # FP8 KV cache for long context support
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # K2-Horizon reasoning and tool calling (native parsers in vLLM 0.30.0)
+  enable_thinking: true
+  reasoning_parser: "k2_horizon"        # Native K2-Horizon reasoning parser
+  tool_call_parser: "k2_horizon"        # Native K2-Horizon tool-call parser
+  enable_auto_tool_choice: true
+
+  # Recipe recommended generation config
+  override_generation_config:
+    temperature: 1.0
+    top_p: 0.95
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768              # Model card examples use 32K
+
+  # CRITICAL: Always use "high" reasoning effort for best results (per model card)
+  # All benchmark results were achieved with reasoning_effort="high"
+  default_chat_template_kwargs:
+    reasoning_effort: "high"            # Options: high, medium, low
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"                    # V0 for MoE stability
+
+# ============================================================================
+# FULL 524K CONTEXT CONFIGURATION (requires FP8 KV or 4+ GPUs)
+# ============================================================================
+# Uncomment and adjust based on your hardware:
+#
+# For FP8 KV cache (2 GPUs, ~256-512K context):
+#   kv_cache_dtype: "fp8"
+#   max_model_len: 524288
+#
+# For 4-GPU setup (full 524K @ BF16):
+#   gpu_groups: ["0,1,2,3"]
+#   tensor_parallel_size: 4
+#   max_model_len: 524288
+#   core_ranges: ["0-111"]
+#
+# ============================================================================
+# ALTERNATIVE: SGLang (if using SGLang backend instead of vLLM)
+# ============================================================================
+# SGLang command with router numerics override:
+# python3 -m sglang.launch_server \
+#   --model-path IFM/K2-Horizon-MoVA-36B-A4B-FP8 --tp 2 --ep 2 --dtype auto \
+#   --attention-backend fa3 \
+#   --json-model-override-args '{"xllm_source_router_gemm_partitions":2}' \
+#   --reasoning-parser k2_horizon --tool-call-parser k2_horizon

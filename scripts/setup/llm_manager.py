@@ -65,12 +65,19 @@ def detect_model_family(config: dict) -> str:
         return "kat-coder-v2.5"
     if "nemotron" in model_id.lower():
         return "nemotron"
-    if "qwen3" in model_id.lower() or "qwen3.5" in model_id.lower() or "qwen3_5" in model_id.lower():
+    model_lower = model_id.lower()
+    if "qwen3.8" in model_lower:
+        return "qwen3.8"
+    if "qwen3.5" in model_lower or "qwen3_5" in model_lower:
+        return "qwen3-moe"
+    if "qwen3.6" in model_lower:
+        return "qwen3.6"
+    if "qwen3.7" in model_lower:
+        return "qwen3.7"
+    if "qwen3" in model_lower:
         return "qwen3-moe"
     if "deepseek" in model_id.lower() or "V4-Flash" in model_id:
         return "deepseek-v4"
-    if "qwen3.6" in model_id.lower():
-        return "qwen3.6"
     return "generic"
 
 def is_language_model_only(config: dict) -> bool:
@@ -571,16 +578,27 @@ def start():
             "--dtype", config["hardware"]["dtype"],
         ]
 
+        # Model implementation backend (for custom architectures not yet natively supported)
+        if model_impl := config["model"].get("model_impl"):
+            cmd.extend(["--model-impl", model_impl])
+            print(f"  Model Implementation: {model_impl.upper()} (custom architecture support)")
+
         # Skip quantization for specific layers (e.g. SWA layers in Laguna)
         if skip_layers := config["inference"].get("kv_cache_dtype_skip_layers"):
             cmd.extend(["--kv-cache-dtype-skip-layers", skip_layers])
             print(f"  KV Cache: Skipping quantization for {skip_layers} layers")
 
         # Quantization for model weights (critical for MoE models)
+        # Support both config.quantization.method and config.hardware.quantization
+        quant_method = None
         if quant_config := config.get("quantization"):
-            if quant_method := quant_config.get("method"):
-                cmd.extend(["--quantization", quant_method])
-                print(f"  Weight Quantization: {quant_method.upper()} (reduces model memory ~50%)")
+            quant_method = quant_config.get("method")
+        elif quant_method := config["hardware"].get("quantization"):
+            pass  # quant_method already set
+
+        if quant_method:
+            cmd.extend(["--quantization", quant_method])
+            print(f"  Weight Quantization: {quant_method.upper()} (reduces model memory ~50%)")
 
         # Hardware optimizations (matching official cookbook)
         if config["hardware"].get("attention_backend"):
@@ -692,7 +710,11 @@ def start():
 
         # Chat template override (important for tool calling)
         if chat_template := config["model"].get("chat_template"):
-            cmd.extend(["--chat-template", chat_template])
+            # Convert relative paths to absolute paths
+            template_path = Path(chat_template)
+            if not template_path.is_absolute():
+                template_path = PROJECT_ROOT / template_path
+            cmd.extend(["--chat-template", str(template_path)])
 
         # Default chat template kwargs (important for Laguna thinking mode)
         if default_kwargs := config["inference"].get("default_chat_template_kwargs"):

@@ -1,0 +1,81 @@
+# LLM Orchestrator - Meta-Llama-3.1-8B-Instruct Configuration (Single GPU)
+# 8B parameter instruction-tuned model with 128K context support
+# Unsloth-optimized version for efficient inference
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "unsloth/Meta-Llama-3.1-8B-Instruct"
+  served_model_name: "llama-3.1-8b"
+  trust_remote_code: false
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0"]
+  core_ranges: ["0-27"]
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                          # Auto-detect (bfloat16 recommended)
+  gpu_memory_utilization: 0.85           # Conservative for stability
+  tensor_parallel_size: 1                # Single GPU deployment
+  attention_backend: "FLASHINFER"
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 131072                  # 128K context (native support)
+                                         # Can reduce to 65536 if memory constrained
+
+  # KV Cache: auto for optimal performance
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # Llama 3.1 does not have native reasoning/thinking tags
+  enable_thinking: false
+
+  # Tool calling for Llama 3.1
+  tool_call_parser: "hermes"
+
+  # Generation config (Llama 3.1 recommended settings)
+  override_generation_config:
+    temperature: 0.6
+    top_p: 0.9
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    FLASHINFER_DISABLE_VERSION_CHECK: "1"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - Llama 3.1 8B Instruct with 128K context window
+# - Unsloth version optimized for efficient inference
+# - Single GPU deployment (~16GB VRAM recommended)
+# - No reasoning parser needed (standard instruction-following model)
+# - Can increase tensor_parallel_size for multi-GPU if needed
+# ============================================================================

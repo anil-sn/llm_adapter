@@ -1,0 +1,91 @@
+# LLM Orchestrator - IFM/K2-Horizon-3.7B Configuration (Single GPU 3)
+# Dense 3.7B parameter model with reasoning and tool-calling capabilities
+# Native context support with efficient single-GPU deployment
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "IFM/K2-Horizon-3.7B"
+  served_model_name: "k2-horizon-3.7b"
+  trust_remote_code: true  # Required for K2-Horizon custom architecture
+  engine_preference: "v0"
+  chat_template: "config/k2_horizon_template.jinja"  # Override model's template (template loaded from HF API)
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION (Single GPU 3)
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["2"]                      # Dedicated to GPU 3
+  core_ranges: ["0-27"]                  # Adjust based on your CPU topology
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                          # Auto-detect optimal dtype (likely bfloat16)
+  gpu_memory_utilization: 0.85           # Conservative for stability
+  tensor_parallel_size: 1                # Single GPU deployment
+  attention_backend: "FLASHINFER"        # High-performance attention
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 65536                   # 64K context (adjust based on GPU memory)
+                                         # Can increase to 131072 (128K) if memory permits
+
+  # KV Cache: auto for optimal performance
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # Reasoning and tool calling (K2 Horizon native features)
+  # Using NATIVE k2_horizon parsers (vLLM 0.30.0+)
+  enable_thinking: true
+  reasoning_parser: "k2_horizon"         # Native K2-Horizon reasoning parser (<ifm|think> tags)
+  tool_call_parser: "k2_horizon"         # Native K2-Horizon tool parser (json/xml/xml_typed formats)
+  enable_auto_tool_choice: true
+
+  # Generation config (recommended settings)
+  override_generation_config:
+    temperature: 1.0
+    top_p: 0.95
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768               # Generous output budget
+
+  # CRITICAL: Use "high" reasoning effort for best results
+  # Model performs best with high reasoning effort enabled
+  default_chat_template_kwargs:
+    reasoning_effort: "high"             # Options: high, medium, low
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"                     # V0 for stability
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    VLLM_TORCH_COMPILE_LEVEL: "0"        # Disable torch compilation for compatibility
+    TORCH_COMPILE_DISABLE: "1"           # Force disable torch.compile
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - Based on official vLLM recipe: https://recipes.vllm.ai/IFM/K2-Horizon-3.7B
+# - Dense 3.7B model (not MoE), no expert parallel needed
+# - Single GPU deployment optimized for GPU 3
+# - ✅ NATIVE SUPPORT: vLLM 0.30.0+ includes K2HorizonForCausalLM architecture
+# - ✅ NATIVE PARSERS: k2_horizon reasoning & tool parsers built-in
+# - Memory footprint: ~7GB for model weights + KV cache
+# - Can increase max_model_len to 131072 or higher if GPU memory permits
+# ============================================================================

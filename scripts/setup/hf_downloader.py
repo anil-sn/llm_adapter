@@ -2,7 +2,7 @@
 """
 LLM Orchestrator: High-Performance Hugging Face Downloader
 
-Uses hf-transfer for maximum throughput on large LLM models.
+Uses Hugging Face Xet for maximum throughput on large LLM models.
 
 Author: Anil Srirangapatna Nagesh
 Version: 1.0
@@ -15,8 +15,10 @@ import shutil
 import argparse
 from pathlib import Path
 
-# Enable hf-transfer for parallel multi-threaded downloading BEFORE importing huggingface_hub
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+# Enable Hugging Face's current high-performance Xet transfer path before
+# importing huggingface_hub.  setdefault preserves an operator's explicit
+# choice to disable or tune it in the environment.
+os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
 
 from huggingface_hub import snapshot_download
 
@@ -38,7 +40,12 @@ def get_config():
 
 def check_disk_space(path, required_gb=100):
     """Ensure there's enough space before starting a 70GB+ download."""
-    stat = shutil.disk_usage(path)
+    # Hugging Face creates its cache lazily.  The preflight check runs before
+    # ``snapshot_download()``, so create the selected cache/download directory
+    # first rather than failing when this is the first model on the host.
+    download_path = Path(path).expanduser()
+    download_path.mkdir(parents=True, exist_ok=True)
+    stat = shutil.disk_usage(download_path)
     free_gb = stat.free / (1024**3)
     if free_gb < required_gb:
         print(f"Warning: Only {free_gb:.1f}GB free. Model may require ~{required_gb}GB.")
@@ -47,11 +54,11 @@ def check_disk_space(path, required_gb=100):
 
 def download_model(model_id, local_dir=None, token=None):
     """
-    Downloads the model using hf-transfer for maximum speed.
+    Downloads the model using Hugging Face Xet for maximum speed.
     """
     print(f"--- Starting Download ---")
     print(f"Model: {model_id}")
-    print(f"Engine: hf-transfer (Multi-threaded, 16 workers)")
+    print(f"Engine: Hugging Face Xet high-performance mode (16 workers)")
     print(f"Resume: Enabled (safe to interrupt and restart)")
 
     # Estimate size

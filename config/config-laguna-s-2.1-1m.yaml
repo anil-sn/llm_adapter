@@ -33,7 +33,7 @@ hardware:
 # INFERENCE SETTINGS
 # ============================================================================
 inference:
-  max_model_len: 1048576                # Native stable 1M context window (Aligned with hf_overrides)
+  max_model_len: 471696                 # vLLM-calculated safe max given 6.54 GiB KV cache budget per GPU (TP=4, FP8)
 
   # Complete native 1M RoPE scaling overrides to restore 1M context support
   hf_overrides:

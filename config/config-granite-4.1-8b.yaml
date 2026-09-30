@@ -1,0 +1,82 @@
+# LLM Orchestrator - IBM Granite 4.1 8B Configuration (Single GPU)
+# 8B parameter instruction-tuned model with tool calling and long-context support
+# Apache 2.0 license - Released April 2026
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "ibm-granite/granite-4.1-8b"
+  served_model_name: "granite-4.1-8b"
+  trust_remote_code: false
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION
+# ============================================================================
+replicas:
+  count: 1
+  gpu_groups: ["0"]
+  core_ranges: ["0-27"]
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "auto"                          # Auto-detect (bfloat16 recommended)
+  gpu_memory_utilization: 0.85           # Conservative for stability
+  tensor_parallel_size: 1                # Single GPU deployment
+  attention_backend: "FLASHINFER"
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 131072                  # 128K context (long-context model)
+                                         # Can reduce to 65536 if memory constrained
+
+  # KV Cache: auto for optimal performance
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # Granite 4.1 has enhanced tool calling capabilities (uses XML format)
+  tool_call_parser: "hermes"             # XML-based tool calling format
+  enable_thinking: false
+
+  # Generation config (Granite 4.1 recommended settings)
+  override_generation_config:
+    temperature: 0.7
+    top_p: 0.9
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"
+    FLASHINFER_DISABLE_VERSION_CHECK: "1"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - IBM Granite 4.1 8B Instruct (April 2026 release)
+# - Apache 2.0 license - fully open for commercial use
+# - Highest HumanEval score (87.2%) in 8B class
+# - Enhanced tool calling and instruction following capabilities
+# - Multi-language support (EN, DE, ES, FR, JA, PT, AR, CS, IT, KO, NL, ZH)
+# - Single GPU deployment (~16GB VRAM recommended)
+# - Optimized for business applications and LLM agents with tool use
+# - Reference: https://huggingface.co/ibm-granite/granite-4.1-8b
+# ============================================================================
