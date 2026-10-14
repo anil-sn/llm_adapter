@@ -205,8 +205,16 @@ class BaseAdapter(ABC):
                 f"input: {total_input_tokens}, context: {max_context})"
             )
 
-        # 6. Clamp max_tokens to available space
-        safe_max_tokens = max(MIN_COMPLETION_TOKENS, min(requested_max_tokens, available_completion))
+        # 6. Clamp max_tokens to available space without enlarging an explicit
+        # client request.  A minimum completion budget is useful only while
+        # calculating a truncation target above; forcing it here turns a
+        # short health/latency probe into a multi-thousand-token generation.
+        safe_max_tokens = min(requested_max_tokens, available_completion)
+        if safe_max_tokens <= 0:
+            raise ValueError(
+                "No completion-token budget remains after fitting the prompt "
+                f"into the {max_context:,}-token context window."
+            )
 
         # 7. Log if clamping occurred
         if safe_max_tokens < requested_max_tokens:

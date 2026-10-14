@@ -47,6 +47,7 @@ try:
     GEMMA_ADAPTER_CONFIG = config.get("gemma_adapter", {})
     MISTRAL_ADAPTER_CONFIG = config.get("mistral_adapter", {})
     LAGUNA_ADAPTER_CONFIG = config.get("laguna_adapter", {})
+    FALCON_MAMBA_ADAPTER_CONFIG = config.get("falcon_mamba_adapter", {})
 
     logger.info(f"Adapter factory initialized with {len(RULES)} routing rules")
     logger.info(f"Max context: {MAX_CONTEXT:,} tokens")
@@ -62,6 +63,7 @@ except ConfigError as e:
     GEMMA_ADAPTER_CONFIG = {}
     MISTRAL_ADAPTER_CONFIG = {}
     LAGUNA_ADAPTER_CONFIG = {}
+    FALCON_MAMBA_ADAPTER_CONFIG = {}
     logger.warning("Using default adapter configuration")
 
 
@@ -159,6 +161,15 @@ def get_adapter(
             max_output_tokens=max_output_tokens
         )
 
+    elif selected_type == "falcon_mamba":
+        # Falcon-Mamba's vLLM slot has an 8,192-token total context.  This
+        # keeps TokenGuard's input-aware clamp local to the adapter instead
+        # of inheriting the much larger gateway-wide model context.
+        adapter = OpenAIAdapter(
+            max_context=FALCON_MAMBA_ADAPTER_CONFIG.get("max_context", 8192),
+            default_max_tokens=FALCON_MAMBA_ADAPTER_CONFIG.get("default_max_tokens", 2048),
+        )
+
     elif selected_type in {"k2_horizon", "k2-horizon", "k2"}:
         adapter = K2HorizonAdapter(
             max_context=MAX_CONTEXT,
@@ -187,7 +198,7 @@ def reload_config() -> None:
         ConfigError: If config reload fails
     """
     global config, RULES, MAX_CONTEXT
-    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG, GEMMA_ADAPTER_CONFIG, MISTRAL_ADAPTER_CONFIG, LAGUNA_ADAPTER_CONFIG
+    global QWEN_ADAPTER_CONFIG, NEMOTRON_ADAPTER_CONFIG, CLAUDE_ADAPTER_CONFIG, GEMMA_ADAPTER_CONFIG, MISTRAL_ADAPTER_CONFIG, LAGUNA_ADAPTER_CONFIG, FALCON_MAMBA_ADAPTER_CONFIG
 
     logger.info("Reloading adapter factory configuration...")
 
@@ -202,6 +213,7 @@ def reload_config() -> None:
         GEMMA_ADAPTER_CONFIG = config.get("gemma_adapter", {})
         MISTRAL_ADAPTER_CONFIG = config.get("mistral_adapter", {})
         LAGUNA_ADAPTER_CONFIG = config.get("laguna_adapter", {})
+        FALCON_MAMBA_ADAPTER_CONFIG = config.get("falcon_mamba_adapter", {})
 
         logger.info(f"Configuration reloaded: {len(RULES)} rules, {MAX_CONTEXT:,} max context")
 

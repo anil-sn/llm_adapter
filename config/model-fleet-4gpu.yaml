@@ -1,0 +1,27 @@
+# One gateway (port 8888) discovers four isolated vLLM servers automatically.
+# Slot-level port/GPU values override only the launched process, not its model config.
+models:
+  - name: k2-horizon-7b
+    config: config/config-k2-horizon-7b.yaml
+    port: 8000
+    gpus: "0"
+    cores: "0-27"
+    tensor_parallel_size: 1
+  - name: granite-4.1-8b
+    config: config/config-granite-4.1-8b.yaml
+    port: 8001
+    gpus: "1"
+    cores: "28-55"
+    tensor_parallel_size: 1
+  - name: llama-3.1-8b-instruct
+    config: config/config-llama-3.1-8b-instruct.yaml
+    port: 8002
+    gpus: "2"
+    cores: "56-83"
+    tensor_parallel_size: 1
+  - name: lfm2.5-8b-a1b
+    config: config/config-lfm2.5-8b-a1b.yaml
+    port: 8003
+    gpus: "3"
+    cores: "84-111"
+    tensor_parallel_size: 1

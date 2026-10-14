@@ -1,0 +1,9 @@
+{# Native Falcon-Mamba Instruct ChatML format plus a stable conversational preamble. #}
+{{- bos_token }}
+{{- '<|im_start|>system\nYou are a helpful conversational assistant. Answer the user directly and naturally. For a greeting, return a short friendly greeting. Do not write code unless asked.<|im_end|>\n' }}
+{%- for message in messages %}
+{{- '<|im_start|>' + message['role'] + '\n' + message['content'] + '<|im_end|>\n' }}
+{%- endfor %}
+{%- if add_generation_prompt %}
+{{- '<|im_start|>assistant\n' }}
+{%- endif %}

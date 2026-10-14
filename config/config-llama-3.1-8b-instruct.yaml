@@ -1,4 +1,4 @@
-# LLM Orchestrator - Meta-Llama-3.1-8B-Instruct Configuration (Single GPU)
+# LLM Orchestrator - Meta-Llama-3.1-8B-Instruct Configuration (4 GPUs)
 # 8B parameter instruction-tuned model with 128K context support
 # Unsloth-optimized version for efficient inference
 # Inherits from: config.yaml, config-adapter.yaml
@@ -17,7 +17,7 @@ model:
 # ============================================================================
 replicas:
   count: 1
-  gpu_groups: ["0"]
+  gpu_groups: ["0,1,2,3"]
   core_ranges: ["0-27"]
 
 # ============================================================================
@@ -26,7 +26,7 @@ replicas:
 hardware:
   dtype: "auto"                          # Auto-detect (bfloat16 recommended)
   gpu_memory_utilization: 0.85           # Conservative for stability
-  tensor_parallel_size: 1                # Single GPU deployment
+  tensor_parallel_size: 4                # Shard the model and KV cache across all 4 GPUs
   attention_backend: "FLASHINFER"
 
 # ============================================================================
@@ -75,7 +75,6 @@ vllm:
 # ============================================================================
 # - Llama 3.1 8B Instruct with 128K context window
 # - Unsloth version optimized for efficient inference
-# - Single GPU deployment (~16GB VRAM recommended)
+# - 4-GPU tensor-parallel deployment; all GPUs 0-3 must be available
 # - No reasoning parser needed (standard instruction-following model)
-# - Can increase tensor_parallel_size for multi-GPU if needed
 # ============================================================================

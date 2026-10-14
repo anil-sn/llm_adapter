@@ -1,0 +1,29 @@
+# Four small-model single-GPU fleet. One gateway discovers each vLLM slot.
+# Falcon-Mamba model card: https://huggingface.co/tiiuae/falcon-mamba-7b
+# Start with:
+#   python scripts/setup/llm_manager.py start-multi --fleet config/model-fleet-small-4gpu.yaml
+models:
+  - name: k2-horizon-7b
+    config: config/config-k2-horizon-7b.yaml
+    port: 8000
+    gpus: "0"
+    cores: "0-27"
+    tensor_parallel_size: 1
+  - name: qwen3-8b
+    config: config/config-qwen3-8b.yaml
+    port: 8001
+    gpus: "1"
+    cores: "28-55"
+    tensor_parallel_size: 1
+  - name: ornith-1.5-9b
+    config: config/config-ornith-1.5-9b.yaml
+    port: 8002
+    gpus: "2"
+    cores: "56-83"
+    tensor_parallel_size: 1
+  - name: falcon-mamba-7b
+    config: config/config-falcon-mamba-7b.yaml
+    port: 8003
+    gpus: "3"
+    cores: "84-111"
+    tensor_parallel_size: 1

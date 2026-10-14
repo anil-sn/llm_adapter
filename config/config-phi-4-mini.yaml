@@ -1,0 +1,37 @@
+# Microsoft Phi-4 Mini Instruct: 128K dense small-model reasoning baseline.
+model:
+  id: "microsoft/Phi-4-mini-instruct"
+  served_model_name: "phi-4-mini"
+  trust_remote_code: true
+  engine_preference: "v0"
+
+replicas:
+  count: 1
+  gpu_groups: ["1"]
+  core_ranges: ["28-55"]
+
+hardware:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.85
+  tensor_parallel_size: 1
+  attention_backend: "TRITON_ATTN"
+
+inference:
+  max_model_len: 131072
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 16384
+  max_num_seqs: 16
+  enable_thinking: false
+  enable_auto_tool_choice: false
+  override_generation_config:
+    temperature: 0.7
+    top_p: 0.9
+  default_max_tokens: 2048
+  max_output_tokens: 16384
+
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"

@@ -1,0 +1,28 @@
+# Edge-model benchmark fleet: one isolated vLLM server per RTX 6000 Ada.
+# Start with:
+#   python scripts/setup/llm_manager.py start-multi --fleet config/model-fleet-edge-4gpu.yaml
+models:
+  - name: gemma-4-e4b
+    config: config/config-gemma-4-e4b.yaml
+    port: 8000
+    gpus: "0"
+    cores: "0-27"
+    tensor_parallel_size: 1
+  - name: phi-4-mini
+    config: config/config-phi-4-mini.yaml
+    port: 8001
+    gpus: "1"
+    cores: "28-55"
+    tensor_parallel_size: 1
+  - name: falcon-mamba-7b
+    config: config/config-falcon-mamba-7b.yaml
+    port: 8002
+    gpus: "2"
+    cores: "56-83"
+    tensor_parallel_size: 1
+  - name: mistral-7b-v0.3
+    config: config/config-mistral-7b-v0.3.yaml
+    port: 8003
+    gpus: "3"
+    cores: "84-111"
+    tensor_parallel_size: 1

@@ -4,6 +4,11 @@ import sys
 import os
 import time
 import re
+from urllib.parse import urlparse
+
+# Fallback credential for the Edge AI gateway benchmark. Environment-provided
+# credentials still take precedence for other deployments.
+DEFAULT_AUTH_TOKEN = "EDGE-AI-ADMIN"
 
 # ANSI color codes for better terminal rendering
 class Colors:
@@ -88,6 +93,89 @@ def extract_json_robust(text):
             
     return None
 
+
+def fleet_smoke_test():
+    """Verify every model exposed by an OpenAI-compatible fleet gateway.
+
+    Run with ``AUTH_TOKEN=... python verify_llm.py --fleet-smoke``. The test
+    bounds generation to 32 tokens so it is safe to use as a readiness check.
+    """
+    base_url = os.getenv("LLM_BASE_URL", "http://127.0.0.1:8888").rstrip("/")
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("AUTH_TOKEN") or DEFAULT_AUTH_TOKEN
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    print()
+    print(header("=" * 80))
+    print(header("                    FLEET ENDPOINT SMOKE TEST"))
+    print(f"  {dim('Gateway:')} {base_url}")
+    print(header("=" * 80))
+
+    parsed_url = urlparse(base_url)
+    if parsed_url.hostname in {"127.0.0.1", "localhost"}:
+        print(f"\n{info('[1/3] Checking local slot health...')}")
+        unhealthy_ports = []
+        for port in range(8000, 8004):
+            try:
+                response = requests.get(f"http://127.0.0.1:{port}/health", timeout=5)
+                ok = response.status_code == 200
+            except requests.RequestException:
+                ok = False
+            label = success("OK") if ok else error("FAILED")
+            print(f"  slot {port}: {label}")
+            if not ok:
+                unhealthy_ports.append(port)
+    else:
+        unhealthy_ports = []
+        print(f"\n{info('[1/3] Skipping local slot health for remote gateway.')}")
+
+    print(f"\n{info('[2/3] Querying /v1/models...')}")
+    try:
+        response = requests.get(f"{base_url}/v1/models", headers=headers, timeout=10)
+        response.raise_for_status()
+        model_ids = [item["id"] for item in response.json().get("data", []) if item.get("id")]
+    except (requests.RequestException, ValueError, KeyError) as exc:
+        print(f"  {error('[-]')} Model discovery failed: {exc}")
+        return 1
+
+    if not model_ids:
+        print(f"  {error('[-]')} Gateway returned no models.")
+        return 1
+    print(f"  {success('[+]')} Models: {', '.join(model_ids)}")
+
+    print(f"\n{info('[3/3] Testing /v1/chat/completions for every model...')}")
+    failures = len(unhealthy_ports)
+    for model_id in model_ids:
+        payload = {
+            "model": model_id,
+            "messages": [{"role": "user", "content": "Hi"}],
+            "max_tokens": 32,
+            "temperature": 0,
+        }
+        started = time.monotonic()
+        try:
+            response = requests.post(
+                f"{base_url}/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=90,
+            )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"].get("content", "").strip()
+            compact_content = " ".join(content.split())
+            print(f"  {success('[+]')} {model_id} ({time.monotonic() - started:.2f}s): {compact_content[:240]}")
+        except (requests.RequestException, ValueError, KeyError, IndexError) as exc:
+            failures += 1
+            print(f"  {error('[-]')} {model_id}: {exc}")
+
+    print()
+    if failures:
+        print(f"  {error('[-]')} Fleet smoke test failed ({failures} failure(s)).")
+        return 1
+    print(f"  {success('[✓]')} All fleet endpoint checks passed.")
+    return 0
+
 def test_openai_compatibility(base_url, api_key, headers):
     """Test OpenAI SDK compatibility"""
     print()
@@ -115,12 +203,17 @@ def test_openai_compatibility(base_url, api_key, headers):
 
         selected_model = model_ids[0]
 
+        # Keep smoke checks focused on visible answers rather than consuming
+        # their small token budget in a model's private reasoning channel.
+        visible_output = {"chat_template_kwargs": {"enable_thinking": False}}
+
         # Test 2: Chat completion
         print(f"\n{info('[2/4] Testing standard chat completion...')}")
         response = client.chat.completions.create(
             model=selected_model,
             messages=[{"role": "user", "content": "Say 'hello' in 3 words"}],
-            max_tokens=20
+            max_tokens=20,
+            extra_body=visible_output,
         )
         print(f"  {success('[+]')} Response: {response.choices[0].message.content}")
         print(f"  {success('[+]')} Tokens: {response.usage.total_tokens}")
@@ -132,7 +225,8 @@ def test_openai_compatibility(base_url, api_key, headers):
             model=selected_model,
             messages=[{"role": "user", "content": "Count to 3"}],
             max_tokens=30,
-            stream=True
+            stream=True,
+            extra_body=visible_output,
         )
         for chunk in stream:
             if chunk.choices[0].delta.content:
@@ -147,7 +241,8 @@ def test_openai_compatibility(base_url, api_key, headers):
             messages=[{"role": "user", "content": "Hi"}],
             max_tokens=10,
             temperature=0.7,
-            top_p=0.9
+            top_p=0.9,
+            extra_body=visible_output,
         )
         print(f"  {success('[+]')} Parameters accepted: temperature=0.7, top_p=0.9")
 
@@ -168,7 +263,7 @@ def test_openai_compatibility(base_url, api_key, headers):
 
 def test_connectivity():
     base_url = os.getenv("LLM_BASE_URL", "http://10.172.249.149:8888").rstrip('/')
-    api_key = os.getenv("LLM_API_KEY", "EDGE-AI-ADMIN")
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("AUTH_TOKEN") or DEFAULT_AUTH_TOKEN
 
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -293,6 +388,10 @@ def test_connectivity():
             "max_tokens": max_tokens,
             "temperature": 0.7,
             "top_p": 0.95,
+            # Latency profiles measure user-visible output.  Disable hidden
+            # reasoning so an Ornith/Qwen-style model does not consume the
+            # entire output budget before emitting an answer.
+            "chat_template_kwargs": {"enable_thinking": False},
             "stream": True,
             "stream_options": {"include_usage": True}
         }
@@ -393,4 +492,6 @@ def test_connectivity():
     print(f"  {success('[+]')} All benchmarks completed successfully!\n")
 
 if __name__ == "__main__":
+    if "--fleet-smoke" in sys.argv:
+        sys.exit(fleet_smoke_test())
     test_connectivity()

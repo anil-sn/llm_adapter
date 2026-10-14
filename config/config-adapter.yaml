@@ -32,6 +32,10 @@ model_rules:
   - pattern: "laguna"
     adapter: "laguna"
 
+  # Falcon-Mamba Instruct → OpenAI-compatible adapter with its 8K context limit
+  - pattern: "falcon-mamba"
+    adapter: "falcon_mamba"
+
   # Fallback → OpenAIAdapter
   - pattern: ".*"
     adapter: "openai"
@@ -109,6 +113,13 @@ mistral_adapter:
 
 # Nemotron Adapter Settings
 nemotron_adapter: {}  # Empty for now - add Nemotron-specific settings if needed
+
+# Falcon-Mamba Instruct is served with max_model_len=8192.  Keep its request
+# budget independent of the gateway's default model context so TokenGuard
+# accounts for prompt tokens before forwarding the request to vLLM.
+falcon_mamba_adapter:
+  max_context: 8192
+  default_max_tokens: 2048
 
 # OpenAI Adapter Settings (fallback)
 openai_adapter: {}  # Empty for now - add OpenAI-specific settings if needed

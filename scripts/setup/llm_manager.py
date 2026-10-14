@@ -17,6 +17,7 @@ import argparse
 import json
 from pathlib import Path
 from typing import List, Dict
+import yaml
 
 # Add src to path for imports
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -31,6 +32,7 @@ except ImportError as e:
     sys.exit(1)
 
 BASE_DIR = PROJECT_ROOT  # For backward compatibility
+DEFAULT_BENCHMARK_URL = "http://10.172.249.149:8888"
 
 
 def get_config():
@@ -45,6 +47,17 @@ def get_config():
     """
     try:
         config = load_config(project_root=PROJECT_ROOT, validate=True)
+        # Fleet launches use the model config as a base and apply process-local
+        # port/GPU isolation, keeping the model reusable outside a fleet too.
+        if port := os.environ.get("LLM_SLOT_PORT"):
+            config["replicas"]["base_port"] = int(port)
+        if gpus := os.environ.get("LLM_SLOT_GPUS"):
+            config["replicas"]["count"] = 1
+            config["replicas"]["gpu_groups"] = [gpus]
+        if cores := os.environ.get("LLM_SLOT_CORES"):
+            config["replicas"]["core_ranges"] = [cores]
+        if tp := os.environ.get("LLM_SLOT_TP"):
+            config["hardware"]["tensor_parallel_size"] = int(tp)
         return config
     except ConfigError as e:
         print(f"Configuration Error: {e}", file=sys.stderr)
@@ -184,7 +197,7 @@ def cleanup_zombies():
     # Find all vLLM API server processes
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "vllm.entrypoints.openai.api_server"],
+            ["pgrep", "-f", r"vllm( serve|\.entrypoints\.openai\.api_server)"],
             capture_output=True, text=True
         )
         if result.returncode == 0:
@@ -265,7 +278,7 @@ def aggressive_cleanup():
     # Target only the vLLM process that matches our current model_id
     try:
         result = subprocess.run(
-            ["pgrep", "-f", "vllm.entrypoints.openai.api_server"],
+            ["pgrep", "-f", r"vllm( serve|\.entrypoints\.openai\.api_server)"],
             capture_output=True, text=True
         )
         if result.returncode == 0:
@@ -561,22 +574,33 @@ def start():
         port = config["replicas"]["base_port"] + i
         core_range = config["replicas"]["core_ranges"][i]
         venv_python = str(BASE_DIR / ".venv" / "bin" / "python")
+        vllm_cli = str(BASE_DIR / ".venv" / "bin" / "vllm")
 
         # BASE COMMAND (Official Nemotron-3 Super Config)
         cmd = [
             "taskset", "-c", core_range,
-            venv_python, "-u", "-m", "vllm.entrypoints.openai.api_server",  # -u for unbuffered output
-            "--model", config["model"]["id"],
+            # vLLM 0.31 deprecates the module entry point; use its supported
+            # CLI so future upgrades do not rely on the compatibility shim.
+            vllm_cli, "serve",
+            # A configured local snapshot takes precedence over the Hub ID.
+            # This avoids an unnecessary second download after `download` was
+            # run with a model-specific local path.
+            "--model", config["model"].get("path") or config["model"]["id"],
             "--host", "127.0.0.1",
             "--port", str(port),
             "--tensor-parallel-size", str(config["hardware"]["tensor_parallel_size"]),
             "--gpu-memory-utilization", str(config["hardware"]["gpu_memory_utilization"]),
             "--kv-cache-dtype", "bfloat16" if config["inference"]["kv_cache_dtype"] == "bf16" else "float16" if config["inference"]["kv_cache_dtype"] == "fp16" else config["inference"]["kv_cache_dtype"],
             "--max-model-len", str(config["inference"]["max_model_len"]),
-            "--trust-remote-code",
             "--tokenizer-mode", config["model"].get("tokenizer_mode", "auto"),
             "--dtype", config["hardware"]["dtype"],
         ]
+
+        # Native vLLM architectures (such as LFM2.5) should not implicitly
+        # execute repository Python.  Preserve remote-code support only for
+        # models that opt into it in their individual model configuration.
+        if config["model"].get("trust_remote_code", False):
+            cmd.append("--trust-remote-code")
 
         # Model implementation backend (for custom architectures not yet natively supported)
         if model_impl := config["model"].get("model_impl"):
@@ -765,6 +789,11 @@ def start():
         process = subprocess.Popen(cmd, env=env, stdout=log, stderr=log, start_new_session=True)
         get_pid_file(name).write_text(str(process.pid))
 
+    # A fleet starts one gateway after every independent vLLM slot is launched.
+    if os.environ.get("LLM_MANAGER_SKIP_GATEWAY") == "1":
+        print("[Start] vLLM slot launched; gateway start deferred to fleet manager.")
+        return
+
     # Restart gateway if it's already running
     gateway_was_running = is_running("nemo_gateway")
     if gateway_was_running:
@@ -890,6 +919,122 @@ def restart_gateway():
     start_gateway()
     print("[Restart Gateway] Gateway restarted successfully")
 
+
+def load_fleet(path: str) -> dict:
+    """Load and validate a collection of isolated vLLM model slots."""
+    fleet_path = Path(path)
+    if not fleet_path.is_absolute():
+        fleet_path = PROJECT_ROOT / fleet_path
+    with fleet_path.open() as handle:
+        fleet = yaml.safe_load(handle) or {}
+    slots = fleet.get("models", [])
+    if not slots:
+        raise ValueError("Fleet configuration must define a non-empty 'models' list.")
+
+    ports, gpus, names = set(), set(), set()
+    for slot in slots:
+        for key in ("name", "config", "port", "gpus"):
+            if key not in slot:
+                raise ValueError(f"Fleet model slot is missing required field: {key}")
+        if slot["name"] in names or slot["port"] in ports:
+            raise ValueError("Fleet model names and ports must be unique.")
+        names.add(slot["name"])
+        ports.add(slot["port"])
+        slot_gpus = {gpu.strip() for gpu in str(slot["gpus"]).split(",")}
+        if overlap := gpus & slot_gpus:
+            raise ValueError(f"GPU slot conflict: {sorted(overlap)} is assigned more than once.")
+        gpus |= slot_gpus
+        if not (PROJECT_ROOT / slot["config"]).exists():
+            raise ValueError(f"Fleet model config does not exist: {slot['config']}")
+    return fleet
+
+
+def fleet_slot_env(slot: dict) -> dict:
+    env = os.environ.copy()
+    env["LLM_CONFIG"] = slot["config"]
+    env["LLM_SLOT_PORT"] = str(slot["port"])
+    env["LLM_SLOT_GPUS"] = str(slot["gpus"])
+    env["LLM_SLOT_CORES"] = str(slot.get("cores", "0-27"))
+    env["LLM_SLOT_TP"] = str(slot.get("tensor_parallel_size", len(str(slot["gpus"]).split(","))))
+    return env
+
+
+def get_fleet_slot(fleet_path: str, slot_name: str) -> tuple[dict, dict]:
+    fleet = load_fleet(fleet_path)
+    for slot in fleet["models"]:
+        if slot["name"] == slot_name:
+            return fleet, slot
+    available = ", ".join(slot["name"] for slot in fleet["models"])
+    raise ValueError(f"Unknown fleet model '{slot_name}'. Available: {available}")
+
+
+def start_model(fleet_path: str, slot_name: str):
+    """Start exactly one model slot and preserve all running fleet members."""
+    fleet, slot = get_fleet_slot(fleet_path, slot_name)
+    env = fleet_slot_env(slot)
+    env["LLM_MANAGER_SKIP_GATEWAY"] = "1"
+    print(f"[Fleet] Starting {slot['name']}: GPU {slot['gpus']} -> 127.0.0.1:{slot['port']}")
+    subprocess.run([sys.executable, str(Path(__file__)), "start"], cwd=PROJECT_ROOT, env=env, check=True)
+
+    # Ensure the shared public endpoint is available without disrupting it if
+    # other fleet models are already serving requests.
+    gateway_env = fleet_slot_env(fleet["models"][0])
+    os.environ.update({key: gateway_env[key] for key in ("LLM_CONFIG", "LLM_SLOT_PORT", "LLM_SLOT_GPUS", "LLM_SLOT_CORES", "LLM_SLOT_TP")})
+    if not is_running("nemo_gateway"):
+        start_gateway()
+
+
+def stop_model(fleet_path: str, slot_name: str):
+    """Stop exactly one model slot; the shared gateway and other slots remain."""
+    _, slot = get_fleet_slot(fleet_path, slot_name)
+    print(f"[Fleet] Stopping {slot['name']}...")
+    subprocess.run([sys.executable, str(Path(__file__)), "stop"], cwd=PROJECT_ROOT, env=fleet_slot_env(slot), check=True)
+
+
+def status_multi(fleet_path: str):
+    """Show each slot's PID state plus the shared gateway state."""
+    slots = load_fleet(fleet_path)["models"]
+    print("--- Multi-Model Fleet Status ---")
+    for slot in slots:
+        env = fleet_slot_env(slot)
+        old_env = {key: os.environ.get(key) for key in env if key.startswith("LLM_SLOT_") or key == "LLM_CONFIG"}
+        os.environ.update({key: env[key] for key in old_env})
+        pid = is_running("vllm_replica_0")
+        print(f"{slot['name']}: {'ACTIVE' if pid else 'INACTIVE'} (GPU {slot['gpus']}, port {slot['port']}, PID {pid or '-'})")
+        for key, value in old_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    print(f"gateway: {'ACTIVE' if is_running('nemo_gateway') else 'INACTIVE'} (port 8888)")
+
+
+def start_multi(fleet_path: str):
+    """Launch all slots, then one gateway that discovers every vLLM server."""
+    slots = load_fleet(fleet_path)["models"]
+    print(f"[Fleet] Launching {len(slots)} isolated model slots...")
+    for slot in slots:
+        env = fleet_slot_env(slot)
+        env["LLM_MANAGER_SKIP_GATEWAY"] = "1"
+        print(f"[Fleet] {slot['name']}: GPU {slot['gpus']} -> 127.0.0.1:{slot['port']}")
+        subprocess.run([sys.executable, str(Path(__file__)), "start"], cwd=PROJECT_ROOT, env=env, check=True)
+
+    gateway_env = fleet_slot_env(slots[0])
+    os.environ.update({key: gateway_env[key] for key in ("LLM_CONFIG", "LLM_SLOT_PORT", "LLM_SLOT_GPUS", "LLM_SLOT_CORES", "LLM_SLOT_TP")})
+    start_gateway()
+    print("[Fleet] Ready. Use http://<host>:8888/v1/models to list all models.")
+
+
+def stop_multi(fleet_path: str):
+    """Stop the shared gateway and each fleet slot without touching others."""
+    slots = load_fleet(fleet_path)["models"]
+    gateway_env = fleet_slot_env(slots[0])
+    os.environ.update({key: gateway_env[key] for key in ("LLM_CONFIG", "LLM_SLOT_PORT", "LLM_SLOT_GPUS", "LLM_SLOT_CORES", "LLM_SLOT_TP")})
+    stop_gateway()
+    for slot in reversed(slots):
+        print(f"[Fleet] Stopping {slot['name']}...")
+        subprocess.run([sys.executable, str(Path(__file__)), "stop"], cwd=PROJECT_ROOT, env=fleet_slot_env(slot), check=True)
+
 def download():
     """Download model using hf_downloader.py."""
     config = get_config()
@@ -909,14 +1054,19 @@ def download():
     print(f"[Download] Using: scripts/setup/hf_downloader.py")
     print()
 
-    # Call hf_downloader.py with current environment (preserves LLM_CONFIG)
+    # A download must be allowed to contact the Hub, even though normal model
+    # serving inherits HF_HUB_OFFLINE=1 from config.yaml after it is cached.
+    download_env = os.environ.copy()
+    download_env["HF_HUB_OFFLINE"] = "0"
+
+    # Call hf_downloader.py with the selected model config.
     downloader_script = PROJECT_ROOT / "scripts" / "setup" / "hf_downloader.py"
 
     try:
         result = subprocess.run(
             [sys.executable, str(downloader_script)],
             cwd=PROJECT_ROOT,
-            env=os.environ.copy(),  # Inherit LLM_CONFIG and other env vars
+            env=download_env,
             check=True
         )
         print(f"\n[Download] Base model download completed successfully")
@@ -985,6 +1135,8 @@ def benchmark(mode="throughput", **kwargs):
     # Build benchmark command
     benchmark_script = PROJECT_ROOT / "scripts" / "benchmark_vllm.py"
     cmd = [sys.executable, str(benchmark_script), "--mode", mode, "--model", model_name]
+    if config.get("inference", {}).get("benchmark_disable_thinking", False):
+        cmd.append("--disable-thinking")
 
     # Add optional arguments
     if "url" in kwargs and kwargs["url"]:
@@ -1024,6 +1176,11 @@ Commands:
   restart            Restart entire cluster
   status             Show cluster status
   restart-gateway    Restart ONLY the gateway (keeps vLLM running)
+  start-multi        Start every model in a fleet manifest plus one gateway
+  stop-multi         Stop every model in a fleet manifest plus its gateway
+  start-model        Start one named model slot from a fleet manifest
+  stop-model         Stop one named model slot from a fleet manifest
+  status-multi       Show the state of every fleet model slot
   stop-gateway       Stop ONLY the gateway
   start-gateway      Start ONLY the gateway
   benchmark          Run vLLM performance benchmark
@@ -1038,6 +1195,9 @@ Examples:
   # Quick gateway restart (after code changes)
   python llm_manager.py restart-gateway
 
+  python llm_manager.py start-multi --fleet config/model-fleet-4gpu.yaml
+  python llm_manager.py stop-model --fleet config/model-fleet-4gpu.yaml --model qwen3-8b
+
   # Run benchmark
   python llm_manager.py benchmark --mode throughput
   python llm_manager.py benchmark --mode concurrent
@@ -1046,13 +1206,17 @@ Examples:
     )
     parser.add_argument("command", choices=[
         "download", "start", "stop", "restart", "status",
-        "restart-gateway", "stop-gateway", "start-gateway", "benchmark"
+        "restart-gateway", "stop-gateway", "start-gateway", "start-multi", "stop-multi",
+        "start-model", "stop-model", "status-multi", "benchmark"
     ])
     parser.add_argument("--mode", default="throughput",
                        choices=["throughput", "concurrent", "streaming", "all"],
                        help="Benchmark mode (for benchmark command)")
-    parser.add_argument("--url", default="http://127.0.0.1:8000",
+    parser.add_argument("--url", default=os.getenv("BASE_URL", os.getenv("LLM_BASE_URL", DEFAULT_BENCHMARK_URL)),
                        help="vLLM API URL (for benchmark command)")
+    parser.add_argument("--fleet", default="config/model-fleet-4gpu.yaml",
+                       help="Fleet manifest used by start-multi and stop-multi")
+    parser.add_argument("--model", help="Fleet model name used by start-model and stop-model")
     args = parser.parse_args()
 
     if args.command == "download":
@@ -1073,5 +1237,19 @@ Examples:
         stop_gateway()
     elif args.command == "start-gateway":
         start_gateway()
+    elif args.command == "start-multi":
+        start_multi(args.fleet)
+    elif args.command == "stop-multi":
+        stop_multi(args.fleet)
+    elif args.command == "start-model":
+        if not args.model:
+            parser.error("start-model requires --model <fleet-model-name>")
+        start_model(args.fleet, args.model)
+    elif args.command == "stop-model":
+        if not args.model:
+            parser.error("stop-model requires --model <fleet-model-name>")
+        stop_model(args.fleet, args.model)
+    elif args.command == "status-multi":
+        status_multi(args.fleet)
     elif args.command == "benchmark":
         benchmark(mode=args.mode, url=args.url)

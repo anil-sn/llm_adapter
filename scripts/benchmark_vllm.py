@@ -23,12 +23,16 @@ Created: 2026-05-20
 import argparse
 import asyncio
 import json
+import os
 import time
 import sys
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import statistics
 from datetime import datetime
+
+DEFAULT_BASE_URL = "http://10.172.249.149:8888"
+DEFAULT_AUTH_TOKEN = "EDGE-AI-ADMIN"
 
 try:
     import httpx
@@ -93,7 +97,8 @@ class VLLMBenchmark:
         model: str = None,
         timeout: int = 600,
         auto_discover: bool = True,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        disable_thinking: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -101,6 +106,7 @@ class VLLMBenchmark:
         self.model = model
         self.auto_discover = auto_discover
         self.api_key = api_key
+        self.disable_thinking = disable_thinking
         self.headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
     async def initialize(self):
@@ -183,6 +189,28 @@ def factorial(n):
         repetitions = max(1, token_count // 50)
         return (base_text * repetitions)[:token_count * 4]
 
+    @staticmethod
+    def _stream_chunk_fields(chunk: Dict[str, Any]) -> tuple[str, str, Optional[int], Optional[int]]:
+        """Extract generated text and authoritative token usage from an SSE chunk.
+
+        Reasoning models such as LFM2.5 stream chain-of-thought in
+        ``delta.reasoning`` and may hit the output limit before emitting any
+        user-visible ``delta.content``.  Counting content chunks therefore
+        measures presentation, not model decode throughput.  When requested,
+        vLLM emits a final usage-only chunk whose completion token count is
+        the authoritative total for both reasoning and final-answer tokens.
+        """
+        usage = chunk.get("usage") or {}
+        completion_tokens = usage.get("completion_tokens")
+        prompt_tokens = usage.get("prompt_tokens")
+
+        choices = chunk.get("choices") or []
+        delta = choices[0].get("delta") or {} if choices else {}
+        content = delta.get("content") or ""
+        reasoning = delta.get("reasoning") or delta.get("reasoning_content") or ""
+
+        return content, reasoning, completion_tokens, prompt_tokens
+
     async def single_request(
         self,
         prompt: str,
@@ -200,13 +228,26 @@ def factorial(n):
             "stream": stream,
             **extra_params
         }
+        if stream:
+            # Ask vLLM for a final usage-only SSE event.  Stream chunks are
+            # not guaranteed to be one token each, so this is the only
+            # reliable count for decode throughput.
+            request["stream_options"] = {
+                **request.get("stream_options", {}),
+                "include_usage": True,
+            }
+        if self.disable_thinking:
+            request["chat_template_kwargs"] = {"enable_thinking": False}
 
         start_time = time.perf_counter()
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             if stream:
                 # Streaming request
-                tokens_received = 0
+                visible_chunks = 0
+                reasoning_chunks = 0
+                completion_tokens = None
+                prompt_tokens = None
                 first_token_time = None
 
                 async with client.stream(
@@ -225,25 +266,43 @@ def factorial(n):
                                 break
                             try:
                                 chunk = json.loads(data)
-                                if first_token_time is None:
+                                content, reasoning, chunk_completion_tokens, chunk_prompt_tokens = self._stream_chunk_fields(chunk)
+                                if content:
+                                    visible_chunks += 1
+                                if reasoning:
+                                    reasoning_chunks += 1
+                                if (content or reasoning) and first_token_time is None:
                                     first_token_time = time.perf_counter()
-                                delta = chunk.get("choices", [{}])[0].get("delta", {})
-                                if "content" in delta and delta["content"]:
-                                    tokens_received += 1
+                                if chunk_completion_tokens is not None:
+                                    completion_tokens = chunk_completion_tokens
+                                if chunk_prompt_tokens is not None:
+                                    prompt_tokens = chunk_prompt_tokens
                             except json.JSONDecodeError:
                                 pass
 
                 end_time = time.perf_counter()
                 ttft = first_token_time - start_time if first_token_time else 0
                 total_time = end_time - start_time
-                tpot = (total_time - ttft) / tokens_received if tokens_received > 0 else 0
+                # Fallback is only for servers that do not implement
+                # stream_options.include_usage; report it explicitly because
+                # chunk count is not an exact token count.
+                output_tokens = completion_tokens
+                token_source = "usage"
+                if output_tokens is None:
+                    output_tokens = visible_chunks + reasoning_chunks
+                    token_source = "stream_chunks_estimate"
+                tpot = (total_time - ttft) / max(output_tokens - 1, 1) if output_tokens > 0 else 0
 
                 return {
                     "latency": total_time,
                     "ttft": ttft,  # Time to first token
                     "tpot": tpot,  # Time per output token
-                    "output_tokens": tokens_received,
-                    "throughput": tokens_received / total_time if total_time > 0 else 0,
+                    "input_tokens": prompt_tokens or 0,
+                    "output_tokens": output_tokens,
+                    "visible_output_chunks": visible_chunks,
+                    "reasoning_chunks": reasoning_chunks,
+                    "token_source": token_source,
+                    "throughput": output_tokens / total_time if total_time > 0 else 0,
                     "stream": True
                 }
             else:
@@ -317,7 +376,9 @@ def factorial(n):
                             print(f"  Request {i+1}/{num_requests}: "
                                   f"{result['throughput']:.1f} tok/s, "
                                   f"TTFT={result['ttft']:.3f}s, "
-                                  f"TPOT={result['tpot']*1000:.1f}ms")
+                                  f"TPOT={result['tpot']*1000:.1f}ms, "
+                                  f"completion={result['output_tokens']} "
+                                  f"({result['token_source']})")
                         else:
                             print(f"  Request {i+1}/{num_requests}: "
                                   f"{result['throughput']:.1f} tok/s, "
@@ -565,7 +626,7 @@ Examples:
 
     parser.add_argument(
         "--url",
-        default="http://127.0.0.1:8888",
+        default=os.getenv("BASE_URL", os.getenv("LLM_BASE_URL", DEFAULT_BASE_URL)),
         help="Gateway/vLLM API base URL (default: http://127.0.0.1:8888)"
     )
     parser.add_argument(
@@ -618,6 +679,11 @@ Examples:
         help="Use non-streaming mode (default: streaming enabled)"
     )
     parser.add_argument(
+        "--disable-thinking",
+        action="store_true",
+        help="Disable model reasoning tokens so latency tests measure visible output"
+    )
+    parser.add_argument(
         "--api-key",
         default=None,
         help="API key for authentication (or set LLM_API_KEY env var)"
@@ -626,15 +692,15 @@ Examples:
     args = parser.parse_args()
 
     # Get API key from args or environment
-    import os
-    api_key = args.api_key or os.environ.get("LLM_API_KEY")
+    api_key = args.api_key or os.environ.get("LLM_API_KEY") or os.environ.get("AUTH_TOKEN") or DEFAULT_AUTH_TOKEN
 
     bench = VLLMBenchmark(
         base_url=args.url,
         model=args.model,
         timeout=args.timeout,
         auto_discover=(args.model is None),
-        api_key=api_key
+        api_key=api_key,
+        disable_thinking=args.disable_thinking,
     )
 
     # Initialize (discover models if needed)

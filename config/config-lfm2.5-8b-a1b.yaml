@@ -1,0 +1,48 @@
+# LiquidAI LFM2.5-8B-A1B: 8.3B total / 1.5B active MoE model.
+# Native vLLM support; one RTX 6000 Ada on GPU 3.
+model:
+  id: "LiquidAI/LFM2.5-8B-A1B"
+  served_model_name: "lfm2.5-8b-a1b"
+  trust_remote_code: false
+  engine_preference: "v0"
+
+replicas:
+  count: 1
+  base_port: 8003
+  gpu_groups: ["3"]
+  core_ranges: ["84-111"]
+
+hardware:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.85
+  tensor_parallel_size: 1
+  attention_backend: "TRITON_ATTN"
+
+inference:
+  # The model supports 128K. Start at 64K to leave KV-cache headroom on one
+  # 49GB RTX 6000 Ada; increase after measuring real workload memory use.
+  max_model_len: 65536
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 16384
+  max_num_seqs: 16
+  # Native vLLM support for LFM2.5: extract its reasoning with the Qwen3
+  # parser and parse its Python-like <|tool_call_*|> format with `lfm2`.
+  # These three settings must be enabled as a set: vLLM rejects automatic
+  # tool choice when no tool-call parser is supplied.
+  enable_thinking: true
+  reasoning_parser: "qwen3"
+  tool_call_parser: "lfm2"
+  enable_auto_tool_choice: true
+  override_generation_config:
+    temperature: 0.2
+    top_k: 80
+    repetition_penalty: 1.05
+  default_max_tokens: 2048
+  max_output_tokens: 8192
+
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"

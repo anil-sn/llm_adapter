@@ -1,0 +1,42 @@
+# Falcon Mamba 7B Instruct: chat-tuned, attention-free recurrent model.
+# Reference: https://huggingface.co/tiiuae/falcon-mamba-7b-instruct
+#
+# Falcon's native ChatML template benefits from a conversational system
+# preamble; without it this checkpoint can complete unrelated training-style
+# examples for short greetings.
+model:
+  id: "tiiuae/falcon-mamba-7b-instruct"
+  path: "/home/asrirang/.cache/huggingface/falcon-mamba-7b-instruct"
+  served_model_name: "falcon-mamba-7b"
+  trust_remote_code: true
+  engine_preference: "v0"
+  chat_template: "config/falcon_mamba_instruct_chat_template.jinja"
+
+replicas:
+  count: 1
+  gpu_groups: ["2"]
+  core_ranges: ["56-83"]
+
+hardware:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.85
+  tensor_parallel_size: 1
+  attention_backend: "TRITON_ATTN"
+
+inference:
+  max_model_len: 8192
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: false
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 8192
+  max_num_seqs: 16
+  enable_thinking: false
+  enable_auto_tool_choice: false
+  enforce_eager: true
+  default_max_tokens: 2048
+  max_output_tokens: 8192
+
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"

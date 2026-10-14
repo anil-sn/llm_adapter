@@ -1,0 +1,38 @@
+# Google Gemma 4 E4B Instruct: 8B total / ~4.5B active, any-to-any input.
+model:
+  id: "google/gemma-4-E4B-it"
+  served_model_name: "gemma-4-e4b"
+  trust_remote_code: true
+  engine_preference: "v0"
+
+replicas:
+  count: 1
+  gpu_groups: ["0"]
+  core_ranges: ["0-27"]
+
+hardware:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.85
+  tensor_parallel_size: 1
+  attention_backend: "TRITON_ATTN"
+
+inference:
+  max_model_len: 131072
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 16384
+  max_num_seqs: 8
+  limit_mm_per_prompt:
+    image: 1
+    audio: 1
+  enable_thinking: false
+  enable_auto_tool_choice: true
+  tool_call_parser: "gemma4"
+  default_max_tokens: 2048
+  max_output_tokens: 16384
+
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "TRITON_ATTN"

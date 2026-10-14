@@ -81,11 +81,11 @@ def run_probe():
     # 4. Construct launching command mimicking llm_manager.py
     port = config["replicas"]["base_port"]
     core_range = config["replicas"]["core_ranges"][0]
-    venv_python = str(PROJECT_ROOT / ".venv" / "bin" / "python")
+    vllm_cli = str(PROJECT_ROOT / ".venv" / "bin" / "vllm")
     
     cmd = [
         "taskset", "-c", core_range,
-        venv_python, "-u", "-m", "vllm.entrypoints.openai.api_server",
+        vllm_cli, "serve",
         "--model", config["model"]["id"],
         "--host", "127.0.0.1",
         "--port", str(port),

@@ -1,0 +1,51 @@
+# Ornith-1.5-9B: dense Qwen3.5-derived reasoning and agentic model.
+model:
+  id: "ornith-ai/Ornith-1.5-9B"
+  served_model_name: "ornith-1.5-9b"
+  tokenizer_mode: "auto"
+  trust_remote_code: true
+
+replicas:
+  count: 1
+  base_port: 8000
+  gpu_groups: ["0"]
+  core_ranges: ["0-27"]
+
+hardware:
+  dtype: "bfloat16"
+  gpu_memory_utilization: 0.85
+  tensor_parallel_size: 1
+  attention_backend: "FLASHINFER"
+  disable_custom_all_reduce: true
+
+inference:
+  # The checkpoint supports 262K tokens.  64K leaves practical KV-cache
+  # headroom alongside bf16 weights on a 49 GB RTX 6000 Ada.
+  max_model_len: 65536
+  kv_cache_dtype: "auto"
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 16384
+  max_num_seqs: 16
+
+  # Official Ornith vLLM recipe: Qwen-style thinking and XML tool calls.
+  enable_thinking: true
+  # The performance harness measures visible output, not private reasoning.
+  benchmark_disable_thinking: true
+  reasoning_parser: "qwen3"
+  tool_call_parser: "qwen3_xml"
+  enable_auto_tool_choice: true
+
+  override_generation_config:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 20
+    presence_penalty: 1.5
+    repetition_penalty: 1.0
+  default_max_tokens: 4096
+  max_output_tokens: 16384
+
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "FLASHINFER"

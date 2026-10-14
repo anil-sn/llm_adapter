@@ -65,6 +65,7 @@ def download_model(model_id, local_dir=None, token=None):
     size_estimates = {
         "Qwen/Qwen3.5-122B-A10B": "~200GB",
         "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8": "~70GB",
+        "LiquidAI/LFM2.5-24B-A2B": "~48GB (BF16)",
     }
     estimated_size = size_estimates.get(model_id, "Large")
     print(f"Estimated Size: {estimated_size}")

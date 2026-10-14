@@ -18,7 +18,7 @@ pyyaml>=6.0.3
 
 # vLLM (CUDA 12.x/13.x compatible)
 # Note: Requires NVIDIA Driver 575.64.03+ with CUDA 12.9 support
-vllm==0.25.1
+vllm==0.31.0
 
 # Optional: Tool calling (web search)
 # Uncomment to enable web search tool
