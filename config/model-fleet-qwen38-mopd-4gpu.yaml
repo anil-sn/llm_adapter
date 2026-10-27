@@ -1,0 +1,22 @@
+# Two-model fleet using GPUs 0-2, leaving GPU 3 free.
+# Qwen3.8-FP8 handles reasoning, coding, and multimodal requests on GPUs 0-1.
+# The MOPD student runs on GPU 2 as a separate service (TP=1).
+#
+# Start with:
+#   uv run python scripts/setup/llm_manager.py start-multi --fleet config/model-fleet-qwen38-mopd-4gpu.yaml
+# Stop the currently running all-GPU model before starting this fleet.
+
+models:
+  - name: qwen38-27b-fp8
+    config: config/config-qwen38-27b-fp8-2gpu.yaml
+    port: 8000
+    gpus: "0,1"
+    cores: "0-55"
+    tensor_parallel_size: 2
+
+  - name: network-mopd-8b
+    config: config/config-network-mopd-8b.yaml
+    port: 8001
+    gpus: "2"
+    cores: "56-83"
+    tensor_parallel_size: 1

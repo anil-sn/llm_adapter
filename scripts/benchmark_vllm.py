@@ -84,7 +84,7 @@ class ModelDiscovery:
     @staticmethod
     def is_mtp_model(model_id: str) -> bool:
         """Check if model likely supports MTP based on name."""
-        mtp_indicators = ["qwen3", "qwen-3", "gemma-4", "gemma4"]
+        mtp_indicators = ["qwen3", "qwen-3", "gemma-4", "gemma4", "flash-next"]
         return any(indicator in model_id.lower() for indicator in mtp_indicators)
 
 

@@ -1210,7 +1210,7 @@ Examples:
         "start-model", "stop-model", "status-multi", "benchmark"
     ])
     parser.add_argument("--mode", default="throughput",
-                       choices=["throughput", "concurrent", "streaming", "all"],
+                       choices=["throughput", "concurrent", "streaming", "mtp", "all"],
                        help="Benchmark mode (for benchmark command)")
     parser.add_argument("--url", default=os.getenv("BASE_URL", os.getenv("LLM_BASE_URL", DEFAULT_BENCHMARK_URL)),
                        help="vLLM API URL (for benchmark command)")

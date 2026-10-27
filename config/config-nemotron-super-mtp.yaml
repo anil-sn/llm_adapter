@@ -41,7 +41,7 @@ inference:
 
   # Reasoning settings
   reasoning_parser: "super_v3"     # Nemotron Super V3 parser
-  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"
+  reasoning_parser_plugin: "src/llm_adapter/utils/super_v3_reasoning_parser.py"
 
   # Tool calling
   tool_call_parser: "qwen3_coder"  # XML format parser

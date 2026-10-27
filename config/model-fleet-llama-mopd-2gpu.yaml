@@ -1,0 +1,18 @@
+# Two-model fleet: each Llama 3.1 8B variant receives an isolated 2-GPU slot.
+# Start with:
+#   python scripts/setup/llm_manager.py start-multi --fleet config/model-fleet-llama-mopd-2gpu.yaml
+# The fleet manager applies each slot's GPU, CPU, port, and TP settings only to
+# its launched process; the reusable model configuration files remain unchanged.
+models:
+  - name: llama-3.1-8b-instruct
+    config: config/config-llama-3.1-8b-instruct.yaml
+    port: 8000
+    gpus: "0,1"
+    cores: "0-55"
+    tensor_parallel_size: 2
+  - name: network-mopd-8b
+    config: config/config-network-mopd-8b.yaml
+    port: 8001
+    gpus: "2,3"
+    cores: "56-111"
+    tensor_parallel_size: 2

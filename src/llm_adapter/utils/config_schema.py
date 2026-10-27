@@ -17,6 +17,7 @@ class AttentionBackend(str, Enum):
     """Supported attention backends."""
     TRITON_ATTN = "TRITON_ATTN"
     FLASH_ATTN = "FLASH_ATTN"
+    FLASHINFER = "FLASHINFER"
     XFORMERS = "XFORMERS"
 
 
@@ -32,6 +33,7 @@ class ReasoningParser(str, Enum):
     SUPER_V3 = "super_v3"
     QWEN3 = "qwen3"
     NEMOTRON_V3 = "nemotron_v3"
+    INKLING = "inkling"
 
 
 # ============================================================================

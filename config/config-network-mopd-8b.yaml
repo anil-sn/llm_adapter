@@ -1,0 +1,78 @@
+# LLM Orchestrator - network-mopd-full-model (bf16) Configuration
+# MOPD student release candidate from /data/shared/Release_1.0/model_gated_candidate
+# Architecture: LlamaForCausalLM (Llama 3.1 8B base, unsloth_fixed), 131072 ctx
+# Inherits from: config.yaml, config-adapter.yaml
+
+# ============================================================================
+# MODEL IDENTITY
+# ============================================================================
+model:
+  id: "/data/shared/Release_1.0/model_gated_candidate/network-mopd-full-model_bf16"
+  served_model_name: "network-mopd-8b"
+  tokenizer_mode: "auto"
+  trust_remote_code: false
+  engine_preference: "v0"
+
+# ============================================================================
+# CLUSTER & REPLICA RUNNER ISOLATION
+# ============================================================================
+replicas:
+  count: 1                               # One vLLM server instance
+  gpu_groups: ["0,1,2,3"]                # Default standalone layout; fleet overrides per slot
+  core_ranges: ["0-111"]                 # Default standalone CPU affinity; fleet overrides per slot
+
+# ============================================================================
+# HARDWARE OVERRIDES
+# ============================================================================
+hardware:
+  dtype: "bfloat16"                      # Weights are bf16; do not auto-upcast
+  gpu_memory_utilization: 0.90           # More KV pool per GPU (~240K tokens)
+  tensor_parallel_size: 4                # Standalone default; fleet slot overrides to TP=1
+  attention_backend: "FLASH_ATTN"        # Fastest; requires auto KV cache (schema: TRITON_ATTN|FLASH_ATTN|XFORMERS)
+
+# ============================================================================
+# INFERENCE SETTINGS
+# ============================================================================
+inference:
+  max_model_len: 131072                  # Native 128K (llama3 rope scaling factor 8)
+
+  kv_cache_dtype: "auto"
+
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+
+  # Batch settings
+  max_num_batched_tokens: 16384
+  max_num_seqs: 32
+
+  # No native reasoning/thinking tags
+  enable_thinking: false
+
+  # Chat template emits tool calls as bare JSON: {"name": ..., "parameters": {...}}
+  tool_call_parser: "llama3_json"
+
+  # Generation config (Llama 3.1 recommended settings)
+  override_generation_config:
+    temperature: 0.6
+    top_p: 0.9
+
+  # Output settings
+  default_max_tokens: 2048
+  max_output_tokens: 32768
+
+# ============================================================================
+# VLLM ENVIRONMENT
+# ============================================================================
+vllm:
+  env:
+    VLLM_USE_V1: "0"
+    VLLM_ATTENTION_BACKEND: "FLASH_ATTN"
+
+# ============================================================================
+# NOTES
+# ============================================================================
+# - Release_1.0 model_gated_candidate; chat template + tokenizer ship in-dir
+# - Template is Llama-3.1 tool-use variant (JSON function calls, ipython-style)
+# - GGUF quantizations available under .../quantized-mopd-student if needed
+# - Set HF_HUB_OFFLINE already inherited from base config (local path load)
+# ============================================================================

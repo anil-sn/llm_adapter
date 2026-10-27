@@ -41,7 +41,7 @@ dependencies = [
     "torch==2.13.0",
     "transformers>=5.16.1",
     "uvicorn>=0.44.0",
-    "vllm==0.31.0",
+    "vllm==0.32.0",
     "wheel>=0.47.0",
     "whichllm",
 ]

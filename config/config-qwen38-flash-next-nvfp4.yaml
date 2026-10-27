@@ -1,144 +1,78 @@
-# LLM Orchestrator - Qwen3.8-Flash-Next NVFP4 Configuration
-# Model: nvidia/Qwen3.8-Flash-Next-NVFP4 (Official NVIDIA Model Optimizer quantization)
-# Released: 08/31/2026 via https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4
-# Quantization: Mixed precision - NVFP4 W4A4 (routed experts), BF16 (attention/shared), FP8 (MTP/PLE)
-# Architecture: 125B total params (6B active), 4B MTP, 51B N-gram embedding
-# Hybrid Attention: Gated DeltaNet + Qwen Sparse Attention with MoE
-# Hardware: 8× NVIDIA Blackwell B200/B300 recommended (optimized for)
-# Inherits from: config.yaml, config-adapter.yaml
+# Qwen3.8-Flash-Next NVFP4 — 4× RTX 6000 Ada, 512K YaRN experiment
+#
+# Separate from the native-262K profile so a verified production configuration
+# remains available.  YaRN factor 2 extends the native 262,144-token window.
 
-# ============================================================================
-# MODEL IDENTITY
-# ============================================================================
 model:
-  chat_template: "config/qwen_fixed.jinja"
   id: "nvidia/Qwen3.8-Flash-Next-NVFP4"
-  served_model_name: "qwen38-flash-next"
+  served_model_name: "flash-next"
   tokenizer_mode: "auto"
   trust_remote_code: true
   engine_preference: "v0"
+  chat_template: "config/qwen_fixed.jinja"
 
-# ============================================================================
-# CLUSTER & REPLICA CONFIGURATION
-# ============================================================================
 replicas:
   count: 1
-  gpu_groups: ["0,1,2,3"]          # 4 GPUs (adjust based on available hardware)
-  core_ranges:
-    - "0-111"                        # CPU core affinity
+  gpu_groups: ["0,1,2,3"]
+  core_ranges: ["0-111"]
 
-# ============================================================================
-# HARDWARE OVERRIDES
-# ============================================================================
 hardware:
-  dtype: "auto"                      # Auto-select optimal precision for NVFP4 mixed precision
-  quantization: "modelopt"           # NVIDIA Model Optimizer (v0.46.0) quantization
-  gpu_memory_utilization: 0.90       # Conservative for 125B model
-  tensor_parallel_size: 4            # 4 GPUs (8 GPUs recommended for optimal performance)
-  attention_backend: "FLASHINFER"    # Default attention backend
+  dtype: "auto"
+  quantization: "modelopt"
+  tensor_parallel_size: 4
+  gpu_memory_utilization: 0.90
+  attention_backend: "FLASHINFER"
+  max_parallel_loading_workers: 1
 
-# ============================================================================
-# INFERENCE SETTINGS
-# ============================================================================
 inference:
-  # Native context: 262K, extensible to 1M tokens
-  max_model_len: 262144              # Native 262K context (extensible to 1M)
-
-  # Memory-efficient features
+  max_model_len: 524288
+  # YaRN must be nested under text_config.rope_parameters — this architecture
+  # (qwen4_exp) stores RoPE there; a top-level rope_scaling hf-override is ignored,
+  # which silently ran 512K positions unscaled (long-context degradation).
+  hf_overrides:
+    text_config:
+      rope_parameters:
+        mrope_interleaved: true
+        mrope_section: [11, 11, 10]
+        rope_type: "yarn"
+        rope_theta: 10000000
+        partial_rotary_factor: 0.25
+        factor: 2.0
+        original_max_position_embeddings: 262144
+  kv_cache_dtype: "auto"
   enable_prefix_caching: true
   enable_chunked_prefill: true
-
-  # Batch settings
   max_num_batched_tokens: 16384
-  max_num_seqs: 4                    # 4 concurrent streams for 4 GPUs
+  # Long contexts need stricter KV-cache admission than the 262K service.
+  max_num_seqs: 4
 
-  # KV cache optimization
-  kv_cache_dtype: "auto"             # Auto-select optimal KV cache precision
-
-  # MoE Settings - CRITICAL: Expert parallel required for MTP
-  enable_expert_parallel: true       # Required for MTP with FP8 128x128 blocks
+  enable_expert_parallel: true
   moe_backend: "auto"
-
-  # Multi-Token Prediction speculative decoding
-  # MTP module uses 128x128 block-scaled FP8
   speculative_decoding:
     method: "mtp"
-    num_speculative_tokens: 1        # NVIDIA recommendation for this model
+    # MTP3 tested faster on this 4x RTX 6000 Ada host (vLLM 0.32).
+    num_speculative_tokens: 3
 
-  # Reasoning / tool calling
   enable_thinking: true
   reasoning_parser: "qwen3"
   tool_call_parser: "qwen3_coder"
 
-  # Generation config (from NVIDIA benchmarks)
+  # Model-card validated sampling: Qwen3 thinking models degrade at low
+  # temperature (repetition loops, truncated reasoning).
   override_generation_config:
     temperature: 1.0
     top_p: 0.95
 
-  # Output settings
-  default_max_tokens: 131072         # As per benchmark settings
-  max_output_tokens: 131072
-
-  # Reasoning effort (from benchmark configuration)
+  # Thinking tokens count against the cap; 4096 truncated reasoning chains.
+  default_max_tokens: 16384
+  max_output_tokens: 16384
   default_chat_template_kwargs:
-    reasoning_effort: "xhigh"        # Benchmark used xhigh
+    reasoning_effort: "medium"
 
-# ============================================================================
-# VLLM ENVIRONMENT
-# ============================================================================
 vllm:
   env:
-    VLLM_ATTENTION_BACKEND: "FLASHINFER"
-    VLLM_USE_V1: "0"                 # V0 engine for NVFP4 stability
-    VLLM_ENABLE_FLASHINFER_AUTOTUNE: "0"  # Disable autotune (as per NVIDIA example)
+    VLLM_USE_V1: "0"
+    # Required for max_model_len > derived 262K; was inherited from shell env only.
+    VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
     FLASHINFER_DISABLE_VERSION_CHECK: "1"
-
-    # Memory optimization
     PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
-
-# ============================================================================
-# NOTES
-# ============================================================================
-# Official NVIDIA Model Optimizer quantization (v0.46.0):
-# - Mixed precision checkpoint (~2.7x smaller than BF16, ~63% disk reduction)
-# - Routed MoE experts: W4A4 NVFP4 with MSE-calibrated weight scales
-# - Preserved in BF16: Attention, shared experts, other main-model layers
-# - MTP routed experts: 128x128 block-scaled FP8
-# - PLE n-gram embedding: Per-tensor FP8
-# - Total: 125B params (6B activated), 4B MTP, 51B n-gram embedding
-#
-# Architecture:
-# - Hybrid Attention: Gated DeltaNet + Qwen Sparse Attention
-# - Mixture-of-Experts with gated residual streams
-# - Vision encoder included (multimodal: text, image, video)
-# - Context: 262K native, extensible to 1M tokens
-#
-# Requirements:
-# - vLLM commit d4d703caf908786416585ceb1f369e2e0363358b or later (for non-MTP)
-# - vLLM PR #55513 required for MTP speculative decoding (until merged)
-# - Transformers v5.16.0+ for upstream Qwen4-Exp support
-# - Optimized for NVIDIA Blackwell B200/B300
-#
-# Benchmark results (vs Qwen3.8-Flash-Next-FP8 baseline):
-# - GPQA Diamond: 91.5 (baseline: 92.0)
-# - HLE: 35.4 (baseline: 34.7)
-# - τ²-Bench Telecom: 90.1 (baseline: 90.8)
-# - MMMU Pro: 78.3 (baseline: 77.1)
-# - SciCode: 18.8 (baseline: 16.3)
-# - AA-LCR: 74.1 (baseline: 71.9)
-# - Terminal-Bench 2.1: 82.9 (baseline: 83.3)
-#
-# Usage example:
-# vllm serve nvidia/Qwen3.8-Flash-Next-NVFP4 \
-#   --tensor-parallel-size 8 \
-#   --enable-expert-parallel \
-#   --quantization modelopt \
-#   --max-model-len 262144 \
-#   --speculative-config '{"method":"mtp","num_speculative_tokens":1}' \
-#   --reasoning-parser qwen3 \
-#   --trust-remote-code \
-#   --no-enable-flashinfer-autotune
-#
-# License: NVIDIA Open Model License + Qwen Community License 1.0
-# Release Date: 08/31/2026
-# Reference: https://huggingface.co/nvidia/Qwen3.8-Flash-Next-NVFP4

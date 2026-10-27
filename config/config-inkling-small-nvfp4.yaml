@@ -1,0 +1,46 @@
+# Thinking Machines Inkling-Small NVFP4
+# 276B total parameters / 12B active; multimodal text, image, and audio input.
+# vLLM requires a build with Inkling support. The NVFP4 checkpoint needs about
+# 180GB and is officially supported on Hopper/Blackwell, not RTX 6000 Ada.
+# TP4 and the 512K cap below are a best-effort profile, not a validated Ada
+# deployment; use H100 TP4, H200 TP2, or supported Blackwell hardware. Inkling
+# uses relative attention, so YaRN/RoPE scaling does not apply to this model.
+
+model:
+  id: "thinkingmachines/Inkling-Small-NVFP4"
+  served_model_name: "inkling-small"
+  trust_remote_code: true
+  tokenizer_mode: "inkling"
+
+replicas:
+  count: 1
+  gpu_groups: ["0,1,2,3"]
+  core_ranges: ["0-111"]
+
+hardware:
+  dtype: "auto"
+  gpu_memory_utilization: 0.95
+  tensor_parallel_size: 4
+  attention_backend: "TRITON_ATTN"
+
+inference:
+  max_model_len: 524288
+  kv_cache_dtype: "fp8"
+  enable_prefix_caching: true
+  enable_chunked_prefill: true
+  max_num_batched_tokens: 4096
+  max_num_seqs: 1
+  limit_mm_per_prompt:
+    image: 1
+    audio: 1
+  enable_auto_tool_choice: true
+  enable_thinking: true
+  reasoning_parser: "inkling"
+  tool_call_parser: "inkling"
+  default_max_tokens: 2048
+  max_output_tokens: 8192
+
+vllm:
+  env:
+    VLLM_USE_V2_MODEL_RUNNER: "1"
+    FLASH_ATTENTION_CUTE_DSL_CACHE_ENABLED: "1"

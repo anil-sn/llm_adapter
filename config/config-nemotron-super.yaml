@@ -1,4 +1,4 @@
-# LLM Orchestrator - Nemotron Super NVFP4 Configuration (MTP Disabled)
+# LLM Orchestrator - Nemotron Super NVFP4 Configuration (MTP Disabled / 512K)
 # Model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
 # Inherits from: config.yaml, config-adapter.yaml
 # 120B params (12B active) with NVFP4 4-bit quantization, MTP disabled to save VRAM
@@ -20,11 +20,11 @@ hardware:
   attention_backend: "TRITON_ATTN" # TRITON (Marlin FP4 padding fix applied to vllm)
 
 # ============================================================================
-# INFERENCE OVERRIDES (Minimal changes: FP8 KV + expert parallel)
+# INFERENCE OVERRIDES (MTP disabled; 2x YaRN extension to 512K)
 # ============================================================================
 inference:
-  # Context settings (Extended with YaRN RoPE scaling)
-  max_model_len: 524288            # 512K context (2× YaRN scaling, FP8 KV cache)
+  # Extend the native 256K attention context with YaRN to 512K.
+  max_model_len: 524288
 
   # Batch settings
   max_num_batched_tokens: 16384    # Standard batch size
@@ -44,15 +44,14 @@ inference:
   hf_overrides:
     num_nextn_predict_layers: 0    # 0 = MTP disabled
 
-  # RoPE scaling configuration (extends context from 256K to 512K)
   rope_scaling:
-    rope_type: "yarn"              # YaRN scaling method (vLLM expects rope_type not type)
-    factor: 2.0                    # 2× scaling from 256K native
+    rope_type: "yarn"
+    factor: 2.0
     original_max_position_embeddings: 262144
 
   # Reasoning settings
   reasoning_parser: "super_v3"     # Nemotron Super V3 parser
-  reasoning_parser_plugin: "./super_v3_reasoning_parser.py"
+  reasoning_parser_plugin: "src/llm_adapter/utils/super_v3_reasoning_parser.py"
 
   # Tool calling
   tool_call_parser: "qwen3_coder"  # XML format parser
