@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - network-mopd-full-model (bf16) Configuration
 # MOPD student release candidate from /data/shared/Release_1.0/model_gated_candidate
 # Architecture: LlamaForCausalLM (Llama 3.1 8B base, unsloth_fixed), 131072 ctx

@@ -1,3 +1,6 @@
+# Runtime selected when a model overlay does not override it. Each model config
+# also declares its backend explicitly for easier review and switching.
+inference_backend: "vllm"
 # LLM Orchestrator - Base Configuration
 # Common settings shared across all models
 # Hardware: 4x NVIDIA RTX 6000 Ada (49GB each, 196GB total)

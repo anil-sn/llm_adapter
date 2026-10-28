@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3.8-27B-FP8 Configuration
 # Multimodal (vision + language) FP8 model
 # Architecture: Qwen3_5ForConditionalGeneration (hybrid linear + standard attention)

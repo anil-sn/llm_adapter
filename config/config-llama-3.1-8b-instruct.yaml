@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Meta-Llama-3.1-8B-Instruct Configuration (4 GPUs)
 # 8B parameter instruction-tuned model with 128K context support
 # Unsloth-optimized version for efficient inference

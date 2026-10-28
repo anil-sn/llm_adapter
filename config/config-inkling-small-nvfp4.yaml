@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # Thinking Machines Inkling-Small NVFP4
 # 276B total parameters / 12B active; multimodal text, image, and audio input.
 # vLLM requires a build with Inkling support. The NVFP4 checkpoint needs about

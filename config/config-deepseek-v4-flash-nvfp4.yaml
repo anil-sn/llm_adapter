@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - DeepSeek V4 Flash Safe Mode Configuration (16K Context)
 # Model: nvidia/DeepSeek-V4-Flash-NVFP4 (284B MoE, 13B Active)
 # Quantization: NVFP4 (weights) / BF16 (activations) + Standard KV Cache

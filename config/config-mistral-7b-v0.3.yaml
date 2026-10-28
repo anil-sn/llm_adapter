@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # Mistral 7B v0.3 base model: 32K GQA Transformer benchmark baseline.
 model:
   id: "mistralai/Mistral-7B-v0.3"

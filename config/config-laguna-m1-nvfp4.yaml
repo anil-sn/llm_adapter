@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - poolside/Laguna-M.1-NVFP4 Configuration (4-GPU / 128K CONTEXT)
 # Model: poolside/Laguna-M.1-NVFP4 (7B MoE, NVFP4 quantization, compressed-tensors)
 # Architecture: 70 layers, 256 experts (16 per token), 64 Q heads, 8 KV heads

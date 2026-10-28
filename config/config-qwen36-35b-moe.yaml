@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3.6-35B-A3B MoE (AWQ 4-bit)
 # MoE architecture with 35B total params, 3B active per token
 # AWQ 4-bit quantization + MTP speculation

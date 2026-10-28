@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # Ornith-1.5-122B NVFP4 target with the IncoAI DFlash2 speculative drafter.
 # Target: https://huggingface.co/ornith-ai/Ornith-1.5-122B-NVFP4
 # Drafter: https://huggingface.co/incoai/Ornith-1.5-122B-DFlash2

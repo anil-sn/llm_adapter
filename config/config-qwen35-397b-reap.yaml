@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3.5-397B-A17B REAP 28% Pruned NVFP4 Configuration (256K Context)
 # Model: rene98c/Qwen3.5-397B-A17B-REAP-28-NVFP4 (164GB weights, 397B sparse MoE)
 # Quantization: NVFP4 (NVIDIA 4-bit weights) / BF16 (activations) + FP8 KV Cache

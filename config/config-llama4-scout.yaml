@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Meta Llama 4 Scout Configuration
 # Model: RedHatAI/Llama-4-Scout-17B-16E-Instruct-NVFP4 (Default)
 # Option: nvidia/Llama-4-Scout-17B-16E-Instruct-FP8 (Switchable)

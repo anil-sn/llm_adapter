@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # Google Gemma 4 E4B Instruct: 8B total / ~4.5B active, any-to-any input.
 model:
   id: "google/gemma-4-E4B-it"

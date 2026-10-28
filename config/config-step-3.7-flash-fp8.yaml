@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Step-3.7-Flash-FP8 Configuration (256K Context with YaRN)
 # Model: stepfun-ai/Step-3.7-Flash-FP8 (198B MoE, 11B Active)
 # Quantization: FP8 (weights & activations) + FP8 KV Cache

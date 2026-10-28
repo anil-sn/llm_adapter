@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # Microsoft Phi-4 Mini Instruct: 128K dense small-model reasoning baseline.
 model:
   id: "microsoft/Phi-4-mini-instruct"

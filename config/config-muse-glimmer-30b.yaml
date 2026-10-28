@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Muse Glimmer-30B Configuration
 # Model: meta-models/Muse-Glimmer-30B (Dense 29.6B + 1.8B Vision Encoder)
 # Hardware: Single RTX 6000 Ada (48GB VRAM)

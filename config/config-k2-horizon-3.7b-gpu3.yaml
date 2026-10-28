@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - IFM/K2-Horizon-3.7B Configuration (Single GPU 3)
 # Dense 3.7B parameter model with reasoning and tool-calling capabilities
 # Native context support with efficient single-GPU deployment

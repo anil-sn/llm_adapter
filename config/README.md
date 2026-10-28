@@ -16,6 +16,23 @@ config-nemotron.yaml (Model-specific overrides)
 
 **Loading order:** Base → Adapters → Model-specific (deep merge)
 
+### Serving runtime selection
+
+Each model config sets the top-level `inference_backend`. Existing model configs
+use `vllm`; `config-drama3.yaml` uses `sglang_omni`. The manager dispatches
+`start`, `stop`, and `status` using this value, so the command form stays the
+same when you switch models:
+
+```bash
+LLM_CONFIG=config/config-drama3.yaml uv run python scripts/setup/llm_manager.py stop
+LLM_CONFIG=config/config-drama3.yaml uv run python scripts/setup/llm_manager.py start
+```
+
+To add another runtime, add its identifier to
+`SUPPORTED_INFERENCE_BACKENDS` in `src/llm_adapter/utils/config_loader.py` and
+register its start handler in `INFERENCE_BACKEND_STARTERS` in
+`scripts/setup/llm_manager.py`.
+
 ---
 
 ## File Structure

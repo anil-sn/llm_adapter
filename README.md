@@ -95,6 +95,11 @@ uv sync --extra tools
 
 **📖 Full installation guide:** [INSTALL.md](INSTALL.md)
 
+### Fish Audio Drama 3
+
+Drama 3 can be exposed through this gateway using SGLang-Omni as its audio
+backend. See the [Drama 3 gateway guide](docs/guides/drama3.md) for setup.
+
 ---
 
 ## 📦 Installation

@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Google Gemma 4 31B NVFP4 Configuration
 # Model: nvidia/Gemma-4-31B-IT-NVFP4
 # Quantization: NVFP4 (weights) / BF16 (activations) + FP8 KV Cache

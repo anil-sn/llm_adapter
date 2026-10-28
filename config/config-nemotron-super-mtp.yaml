@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Nemotron Super NVFP4 Configuration
 # Model: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
 # Inherits from: config.yaml, config-adapter.yaml

@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3-235B MoE AWQ Configuration (512K Context)
 # Model: QuantTrio/Qwen3-235B-A22B-Instruct-2507-AWQ (235B total, 22B active per token)
 # Quantization: AWQ 4-bit + FP8 KV Cache

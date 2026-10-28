@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Step-3.7-Flash-NVFP4 Configuration (256K Context)
 # Model: stepfun-ai/Step-3.7-Flash-NVFP4 (198B MoE, 11B Active)
 # Quantization: NVFP4 (NVIDIA 4-bit weights) / BF16 (activations) + FP8 KV Cache

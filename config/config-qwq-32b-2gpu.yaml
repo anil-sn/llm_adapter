@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - QwQ-32B AWQ 2-GPU Configuration (Snappy 128K Context)
 # Model: Qwen/QwQ-32B-AWQ (32B Dense Reasoning Model with native Chain-of-Thought)
 # Quantization: AWQ 4-bit (Native GPU hardware decompression)

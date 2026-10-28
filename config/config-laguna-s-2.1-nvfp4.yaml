@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - poolside/Laguna-S-2.1 NVFP4 Configuration (4-GPU / 512K CONTEXT)
 # Optimized with FLASHINFER, SWA KV-cache skipping, and VLLM_BLOCKSCALE_FP8_GEMM_FLASHINFER workaround
 # Quantization: NVFP4 (weights) / BF16 (activations)

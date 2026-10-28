@@ -17,7 +17,7 @@ import httpx
 import logging
 import asyncio
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from pathlib import Path
 
 from llm_adapter.adapters.factory import get_adapter
@@ -143,10 +143,21 @@ REPLICAS = [
 async def list_models():
     import time
     cache = await get_active_models()
-    if cache["raw_data"]:
+    configured_external = [
+        {
+            "id": backend.get("id"),
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": "llm-adapter",
+        }
+        for backend in config.get("external_backends", [])
+        if backend.get("id")
+        and backend["id"].lower() not in {item.get("id", "").lower() for item in cache["raw_data"]}
+    ]
+    if cache["raw_data"] or configured_external:
         return {
             "object": "list",
-            "data": cache["raw_data"]
+            "data": cache["raw_data"] + configured_external
         }
     
     # Static fallback if no active vLLM replica is detected yet
@@ -253,6 +264,68 @@ async def proxy_router(request: Request, path: str):
         body = json.loads(body_bytes) if body_bytes else {}
     except (json.JSONDecodeError, ValueError):
         body = {}
+
+    # Audio generation backends such as SGLang-Omni expose native media
+    # endpoints rather than chat completions. Route configured endpoints as
+    # raw HTTP requests so binary audio and streaming responses stay intact.
+    if request.method == "POST" and path.lstrip("/") == "v1/audio/speech":
+        requested_model = str(body.get("model", "")).lower()
+        backend = next(
+            (
+                item for item in config.get("external_backends", [])
+                if item.get("id", "").lower() == requested_model
+            ),
+            None,
+        )
+        if backend is None:
+            return JSONResponse(
+                {"error": {"message": f"No audio backend configured for model '{requested_model}'"}},
+                status_code=404,
+            )
+
+        target_url = f"{backend['base_url'].rstrip('/')}/v1/audio/speech"
+        upstream_body = {key: value for key, value in body.items() if key != "model"}
+        headers = {"Content-Type": "application/json"}
+        if request.headers.get("authorization"):
+            headers["Authorization"] = request.headers["authorization"]
+        try:
+            if body.get("stream"):
+                upstream_request = client.build_request(
+                    "POST", target_url, json=upstream_body, headers=headers, timeout=None
+                )
+                upstream = await client.send(upstream_request, stream=True)
+                response_headers = {
+                    key: value for key, value in upstream.headers.items()
+                    if key.lower() in {"content-type", "content-disposition", "cache-control"}
+                }
+
+                async def audio_stream():
+                    try:
+                        async for chunk in upstream.aiter_raw():
+                            yield chunk
+                    finally:
+                        await upstream.aclose()
+
+                return StreamingResponse(
+                    audio_stream(),
+                    status_code=upstream.status_code,
+                    headers=response_headers,
+                    media_type=response_headers.get("content-type"),
+                )
+
+            upstream = await client.post(target_url, json=upstream_body, headers=headers, timeout=None)
+            response_headers = {
+                key: value for key, value in upstream.headers.items()
+                if key.lower() in {"content-type", "content-disposition", "cache-control"}
+            }
+            return Response(
+                content=upstream.content,
+                status_code=upstream.status_code,
+                headers=response_headers,
+            )
+        except httpx.HTTPError as exc:
+            logger.error(f"Audio backend request failed ({target_url}): {exc}")
+            return JSONResponse({"error": {"message": "Audio backend unavailable"}}, status_code=502)
 
     # Protocol detection
     is_anthropic = "messages" in path and "chat" not in path

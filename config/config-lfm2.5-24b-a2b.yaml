@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LiquidAI LFM2.5-24B-A2B: 24B total / 2.45B active MoE reasoning model.
 # Four RTX 6000 Ada GPUs (TP=4).  The 131K native context avoids quality loss
 # from RoPE scaling while leaving substantial KV-cache headroom per GPU.

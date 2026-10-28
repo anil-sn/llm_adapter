@@ -21,6 +21,10 @@ import yaml
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Runtime adapters supported by the process manager. Add a value here when a
+# new serving runtime is integrated, then register its launcher in llm_manager.
+SUPPORTED_INFERENCE_BACKENDS = {"vllm", "sglang_omni"}
+
 
 class ConfigError(Exception):
     """Base exception for configuration errors."""
@@ -306,6 +310,13 @@ def validate_model_config(config: Dict[str, Any]) -> None:
             f"model section missing required fields: {missing}\n"
             f"Required: {required_fields}\n"
             f"Found: {list(model.keys())}"
+        )
+
+    inference_backend = config.get("inference_backend", "vllm")
+    if inference_backend not in SUPPORTED_INFERENCE_BACKENDS:
+        choices = ", ".join(sorted(SUPPORTED_INFERENCE_BACKENDS))
+        raise ConfigValidationError(
+            f"Unsupported inference_backend '{inference_backend}'. Supported values: {choices}"
         )
 
     # Run the engine and precision checks

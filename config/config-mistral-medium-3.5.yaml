@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Mistral Medium 3.5 128B with EAGLE Speculative Decoding
 # AWQ 4-bit quantization + FP8 KV cache + EAGLE draft model
 # 256K native context (YaRN scaling to 384K)

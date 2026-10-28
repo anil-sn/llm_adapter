@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - IBM Granite 4.1 8B Configuration (Single GPU)
 # 8B parameter instruction-tuned model with tool calling and long-context support
 # Apache 2.0 license - Released April 2026

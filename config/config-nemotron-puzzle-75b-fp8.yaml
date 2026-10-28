@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Nemotron Labs 3 Puzzle 75B FP8 Configuration
 # Model: nvidia/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-FP8
 # Inherits from: config.yaml, config-adapter.yaml

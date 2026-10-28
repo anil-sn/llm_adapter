@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3.6-72B Instruct AWQ (512K Context via YaRN)
 # Model: Qwen/Qwen3.6-72B-Instruct-AWQ (72B Dense, mid-2026 flagship)
 # Quantization: AWQ 4-bit (Native GPU hardware decompression)

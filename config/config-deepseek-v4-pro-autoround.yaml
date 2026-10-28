@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Intel DeepSeek V4 Pro AutoRound Configuration (500K Context)
 # Model: Intel/DeepSeek-V4-Pro-W4A16-AutoRound (Pro Weight-Only 4-bit)
 # Quantization: AutoRound W4A16 (weights) + FP8 KV Cache

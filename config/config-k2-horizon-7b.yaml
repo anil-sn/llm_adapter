@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - IFM/K2-Horizon-7B Configuration (Single GPU)
 # Dense 7B parameter model with advanced reasoning and tool-calling capabilities
 # Native support for thinking modes (high/medium/low effort) and multi-format tool calling

@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3-8B Configuration (Single GPU)
 # Dense 8B parameter instruct model with 40K native context
 # Lightweight deployment with thinking and tool calling support

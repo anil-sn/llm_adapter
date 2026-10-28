@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3.5-122B-A10B-GPTQ-Int4 Configuration
 # GPTQ Int4 quantization allows full model in 4x48GB GPUs
 # Inherits from: config.yaml, config-adapter.yaml

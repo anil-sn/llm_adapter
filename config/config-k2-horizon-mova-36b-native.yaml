@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - IFM/K2-Horizon-MoVA-36B-A4B-FP8 Configuration (NATIVE PARSERS)
 # MoE + MoVA attention: 36B stored / 4B active per token
 # Native FP8 quantized checkpoint for optimal memory efficiency

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
 LLM Orchestrator - Process Manager
-Manages vLLM replicas and gateway with layered configuration support
-Optimized for vLLM v0.19.0+ API
+Manages configured inference runtime replicas and gateway.
 
 Author: Anil Srirangapatna Nagesh
 Version: 2.0
@@ -15,6 +14,7 @@ import subprocess
 import time
 import argparse
 import json
+import shutil
 from pathlib import Path
 from typing import List, Dict
 import yaml
@@ -25,7 +25,11 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 # Import config loader
 try:
-    from llm_adapter.utils.config_loader import load_config, ConfigError
+    from llm_adapter.utils.config_loader import (
+        load_config,
+        ConfigError,
+        SUPPORTED_INFERENCE_BACKENDS,
+    )
 except ImportError as e:
     print(f"Error: Could not import config loader: {e}", file=sys.stderr)
     print(f"Ensure you're running from project root: {PROJECT_ROOT}", file=sys.stderr)
@@ -71,6 +75,17 @@ def get_config():
         traceback.print_exc()
         sys.exit(1)
 
+
+def get_inference_backend(config: dict) -> str:
+    """Return the serving runtime explicitly selected by the model config."""
+    backend = str(config.get("inference_backend", "vllm")).strip().lower()
+    if backend not in SUPPORTED_INFERENCE_BACKENDS:
+        choices = ", ".join(sorted(SUPPORTED_INFERENCE_BACKENDS))
+        raise ValueError(
+            f"Unsupported inference_backend '{backend}'. Choose one of: {choices}."
+        )
+    return backend
+
 def detect_model_family(config: dict) -> str:
     """Detect model family from config for logging purposes."""
     model_id = config.get("model", {}).get("id", "")
@@ -107,7 +122,7 @@ def get_model_suffix():
         return ""
 
 def get_pid_file(name):
-    if name.startswith("vllm_replica"):
+    if name.startswith(("vllm_replica", "sglang_omni_replica")):
         if suffix := get_model_suffix():
             return BASE_DIR / f".{name}_{suffix}.pid"
     return BASE_DIR / f".{name}.pid"
@@ -115,7 +130,7 @@ def get_pid_file(name):
 def get_log_file(name):
     log_dir = BASE_DIR / "logs"
     log_dir.mkdir(exist_ok=True)
-    if name.startswith("vllm_replica"):
+    if name.startswith(("vllm_replica", "sglang_omni_replica")):
         if suffix := get_model_suffix():
             return log_dir / f"{name}_{suffix}.log"
     return log_dir / f"{name}.log"
@@ -259,18 +274,56 @@ def cleanup_zombies():
 
 
 def aggressive_cleanup():
-    """Kill only vLLM/replica processes for the current model being started, allowing multiple models to co-exist."""
+    """Stop the selected runtime for the currently configured model."""
     try:
         config = get_config()
         model_id = config["model"]["id"]
-        served_name = config["model"].get("served_model_name", "vllm")
+        served_name = config["model"].get("served_model_name", model_id)
         gpu_groups = config["replicas"]["gpu_groups"]
+        backend = get_inference_backend(config)
     except Exception:
         model_id = ""
-        served_name = "vllm"
+        served_name = "unknown"
         gpu_groups = []
+        backend = "vllm"
 
-    print(f"[Cleanup] Cleaning up processes for model: {served_name} ({model_id or 'all'})...")
+    print(f"[Cleanup] Cleaning up {backend} processes for model: {served_name} ({model_id or 'all'})...")
+
+    if backend == "sglang_omni":
+        pids = []
+        for i in range(config.get("replicas", {}).get("count", 1)):
+            name = f"sglang_omni_replica_{i}"
+            if pid := is_running(name):
+                pids.append(pid)
+
+        # Also find a matching server if its PID file was removed or stale.
+        try:
+            result = subprocess.run(
+                ["pgrep", "-f", r"sgl-omni serve"], capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                for pid_text in result.stdout.splitlines():
+                    if not pid_text.strip():
+                        continue
+                    pid = int(pid_text)
+                    if pid == os.getpid() or pid in pids:
+                        continue
+                    try:
+                        cmdline = Path(f"/proc/{pid}/cmdline").read_text().replace("\x00", " ")
+                    except OSError:
+                        continue
+                    if not model_id or model_id in cmdline:
+                        pids.append(pid)
+        except (FileNotFoundError, ValueError):
+            pass
+
+        if pids:
+            graceful_kill_pids(pids, "SGLang-Omni")
+        for i in range(config.get("replicas", {}).get("count", 1)):
+            get_pid_file(f"sglang_omni_replica_{i}").unlink(missing_ok=True)
+        if not pids:
+            print("[Cleanup] No active SGLang-Omni process found for this model.")
+        return
     
     replica_pids = []
     lingering_pids = []
@@ -476,14 +529,9 @@ def run_constrained_dry_run(cmd: List[str], env: Dict[str, str]) -> bool:
         return False
 
 
-def start():
-    # Always clean up aggressively first
-    aggressive_cleanup()
-
-    # Apply vLLM patches if needed (idempotent)
+def start_vllm(config: dict) -> None:
+    """Start the vLLM runtime for the configured model."""
     apply_vllm_patches()
-
-    config = get_config()
 
     # Validate that model config is present
     if "model" not in config or "id" not in config.get("model", {}):
@@ -829,6 +877,84 @@ def start():
 
     print("\n[Start] Cluster launch complete. All processes started fresh.")
 
+
+def start_sglang_omni(config: dict) -> None:
+    """Launch SGLang-Omni using the selected model config, then start the gateway."""
+    if "model" not in config or not config.get("model", {}).get("id"):
+        raise ValueError("SGLang-Omni requires model.id in the selected config")
+
+    runtime = config.get("sglang_omni", {})
+    executable = runtime.get("executable", "sgl-omni")
+    configured_executable = Path(executable).expanduser()
+    if not configured_executable.is_absolute():
+        configured_executable = PROJECT_ROOT / configured_executable
+    resolved_executable = (
+        str(configured_executable.resolve())
+        if configured_executable.is_file()
+        else shutil.which(executable)
+    )
+    if resolved_executable is None:
+        raise RuntimeError(
+            f"Cannot find SGLang-Omni executable '{executable}'. Install its uv project with "
+            "`uv sync --project runtimes/sglang_omni` or set sglang_omni.executable "
+            "to the installed executable path."
+        )
+
+    replicas = config["replicas"]
+    for index in range(replicas.get("count", 1)):
+        name = f"sglang_omni_replica_{index}"
+        port = replicas["base_port"] + index
+        env = os.environ.copy()
+        env["CUDA_VISIBLE_DEVICES"] = replicas["gpu_groups"][index]
+        env.setdefault("HF_HOME", str(Path.home() / ".cache" / "huggingface"))
+
+        model_path = config["model"].get("path") or config["model"]["id"]
+        cmd = [
+            resolved_executable,
+            "serve",
+            "--model-path",
+            str(model_path),
+            "--model-name",
+            str(config["model"].get("served_model_name", config["model"]["id"])),
+            "--host",
+            str(runtime.get("host", "127.0.0.1")),
+            "--port",
+            str(port),
+        ]
+        cmd.extend(str(arg) for arg in runtime.get("args", []))
+
+        print(f"Launching SGLang-Omni replica {index} | GPUs {env['CUDA_VISIBLE_DEVICES']} | Port {port}")
+        with open(get_log_file(name), "w") as log:
+            process = subprocess.Popen(cmd, env=env, stdout=log, stderr=log, start_new_session=True)
+        get_pid_file(name).write_text(str(process.pid))
+
+    if os.environ.get("LLM_MANAGER_SKIP_GATEWAY") == "1":
+        print("[Start] SGLang-Omni launched; gateway start deferred to fleet manager.")
+        return
+
+    start_gateway()
+    print("\n[Start] SGLang-Omni and gateway started.")
+
+
+# Runtime extension point: add a handler here when introducing another
+# inference engine. Selection remains entirely config-driven.
+INFERENCE_BACKEND_STARTERS = {
+    "vllm": start_vllm,
+    "sglang_omni": start_sglang_omni,
+}
+
+
+def start() -> None:
+    config = get_config()
+    backend = get_inference_backend(config)
+    starter = INFERENCE_BACKEND_STARTERS.get(backend)
+    if starter is None:
+        raise ValueError(f"No start handler registered for inference backend '{backend}'")
+
+    # Clean up the selected model/runtime before launching it.
+    aggressive_cleanup()
+    starter(config)
+
 def kill_process_group(pid, name):
     """Kill a process and all its children using process group."""
     print(f"Stopping {name} (PID: {pid})...")
@@ -853,15 +979,18 @@ def kill_process_group(pid, name):
 def stop():
     """Stop all cluster processes, including any zombies."""
     aggressive_cleanup()
+    stop_gateway()
     print("[Stop] All processes killed. Cleanup complete.")
 
 def status():
     config = get_config()
+    backend = get_inference_backend(config)
+    process_prefix = "sglang_omni_replica" if backend == "sglang_omni" else "vllm_replica"
     print("--- Nemo-Orchestrator Cluster Status ---")
     for i in range(config["replicas"]["count"]):
-        name = f"vllm_replica_{i}"
+        name = f"{process_prefix}_{i}"
         state = "ACTIVE" if is_running(name) else "INACTIVE"
-        print(f"Replica {i}: {state}")
+        print(f"{backend} replica {i}: {state}")
     gw = "ACTIVE" if is_running("nemo_gateway") else "INACTIVE"
     print(f"Gateway: {gw} (Port: {config['cluster']['gateway_port']})")
 

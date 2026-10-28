@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - Qwen3.6-27B NVFP4 Configuration (1M CONTEXT)
 # ModelOpt FP4 Quantization + FP8 KV cache
 # 1M token context via YaRN 4× RoPE scaling

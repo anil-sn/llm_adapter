@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # Qwen3.8-Flash-Next NVFP4 — 4× RTX 6000 Ada, 512K YaRN experiment
 #
 # Separate from the native-262K profile so a verified production configuration

@@ -1,3 +1,4 @@
+inference_backend: "vllm"
 # LLM Orchestrator - KAT-Coder-V2.5-Dev Configuration
 # Model: Kwaipilot/KAT-Coder-V2.5-Dev (35B MoE, 3B active params)
 # Base: Qwen3.6-35B-A3B post-trained with SFT/RL
